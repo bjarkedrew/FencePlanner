@@ -2,8 +2,8 @@
 setlocal
 title AgOpenGPS Fence Planner Setup
 
-rem Indsaet download-linket til AgOpenGPS_FencePlanner_package.zip her:
-set "PACKAGE_URL=https://github.com/bjarkedrew/FencePlanner/releases/download/v1.0.0/AgOpenGPS_FencePlanner_package.zip"
+rem Downloader altid pakken fra nyeste GitHub release:
+set "PACKAGE_URL=https://github.com/bjarkedrew/FencePlanner/releases/latest/download/AgOpenGPS_FencePlanner_package.zip"
 
 if "%PACKAGE_URL%"=="" (
     echo Mangler PACKAGE_URL i FencePlanner_Setup.bat

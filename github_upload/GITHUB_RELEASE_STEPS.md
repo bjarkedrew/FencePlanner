@@ -17,8 +17,8 @@ Releases -> Draft a new release
 Brug:
 
 ```text
-Tag version: v1.0.0
-Release title: AgOpenGPS Fence Planner v1.0.0
+Tag version: v1.0.1
+Release title: AgOpenGPS Fence Planner v1.0.1
 ```
 
 Kopier teksten fra `RELEASE_NOTES.md` ind i beskrivelsen.
@@ -39,7 +39,7 @@ Installer_fra_lokal_pakke.bat
 Efter zippen er uploadet, får den et download-link i dette format:
 
 ```text
-https://github.com/DIT_NAVN/DIT_REPO/releases/download/v1.0.0/AgOpenGPS_FencePlanner_package.zip
+https://github.com/bjarkedrew/FencePlanner/releases/latest/download/AgOpenGPS_FencePlanner_package.zip
 ```
 
 Åbn `FencePlanner_Setup.bat` og ret linjen:
@@ -51,7 +51,7 @@ set "PACKAGE_URL="
 til:
 
 ```bat
-set "PACKAGE_URL=https://github.com/DIT_NAVN/DIT_REPO/releases/download/v1.0.0/AgOpenGPS_FencePlanner_package.zip"
+set "PACKAGE_URL=https://github.com/bjarkedrew/FencePlanner/releases/latest/download/AgOpenGPS_FencePlanner_package.zip"
 ```
 
 Upload derefter den rettede `FencePlanner_Setup.bat` igen til releasen.
