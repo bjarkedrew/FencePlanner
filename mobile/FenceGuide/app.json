@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "Fence Guide",
+    "slug": "fence-guide",
+    "version": "0.1.2",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "platforms": [
+      "android",
+      "web"
+    ],
+    "android": {
+      "package": "dk.fenceplanner.fenceguide",
+      "versionCode": 3,
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.INTERNET"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Fence Guide bruger GPS til at vise din position i forhold til hegnslinjen.",
+          "locationAlwaysAndWhenInUsePermission": "Fence Guide bruger GPS til at vise din position i forhold til hegnslinjen."
+        }
+      ],
+      "./plugins/with-cleartext",
+      "expo-font"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "3e88b4bc-4923-4fd2-8685-e17f83c37140"
+      }
+    },
+    "owner": "bjarke7480"
+  }
+}

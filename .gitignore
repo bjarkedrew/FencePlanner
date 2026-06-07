@@ -1,0 +1,12 @@
+.venv/
+.tools/
+build/
+dist/
+release/
+github_upload/*.zip
+*.spec
+__pycache__/
+*.pyc
+node_modules/
+mobile/**/node_modules/
+.expo/

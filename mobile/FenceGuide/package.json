@@ -1,0 +1,27 @@
+{
+  "name": "fence-guide",
+  "version": "0.1.2",
+  "private": true,
+  "main": "node_modules/expo/AppEntry.js",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "web": "expo start --web",
+    "build:android": "eas build -p android --profile preview"
+  },
+  "dependencies": {
+    "@expo/vector-icons": "^14.0.4",
+    "expo": "^53.0.0",
+    "expo-document-picker": "^13.0.3",
+    "expo-file-system": "^18.0.12",
+    "expo-font": "~13.3.2",
+    "expo-location": "^18.0.10",
+    "expo-sharing": "^13.0.1",
+    "react": "19.0.0",
+    "react-native": "0.79.6",
+    "react-native-webview": "13.13.5"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.25.2"
+  }
+}
