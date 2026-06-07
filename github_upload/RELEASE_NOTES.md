@@ -1,4 +1,4 @@
-# AgOpenGPS Fence Planner v1.0.0
+# AgOpenGPS Fence Planner v1.0.1
 
 Windows-program til planlægning af hegn, zoner og pælepunkter ud fra AgOpenGPS-markfiler.
 
