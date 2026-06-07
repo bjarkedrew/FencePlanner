@@ -13,7 +13,17 @@ from pathlib import Path
 
 import qrcode
 
-from .agopen import default_fields_path, import_agshare_zip, list_fields, load_field, save_as_new_field
+from .agopen import (
+    default_fields_path,
+    import_agshare_zip,
+    list_fields,
+    load_fence_plan,
+    load_field,
+    planner_fields_path,
+    plans_dir,
+    save_as_new_field,
+    save_fence_plan,
+)
 from .geometry import polygon_area, generate_equal_area_fences, signed_cross_track, stake_points_on_line
 from .kml_transform import KmlLocalTransform
 from .map_canvas import MapCanvas
@@ -145,7 +155,7 @@ class MainWindow(QMainWindow):
         self.path_label = QLabel()
         btn_path = QPushButton("Vælg Fields-mappe")
         btn_path.clicked.connect(self.choose_fields_path)
-        btn_agshare = QPushButton("Importer AgShare ZIP")
+        btn_agshare = QPushButton("Importer AgShare/TASKDATA ZIP")
         btn_agshare.clicked.connect(self.import_agshare)
         self.field_list = QListWidget()
         self.field_list.currentRowChanged.connect(self.load_selected_field)
@@ -190,6 +200,10 @@ class MainWindow(QMainWindow):
         btn_gen.clicked.connect(self.generate)
         btn_save = QPushButton("Gem som ny mark")
         btn_save.clicked.connect(self.save_new_field)
+        btn_save_plan = QPushButton("Gem hegnsplan")
+        btn_save_plan.clicked.connect(self.save_plan)
+        btn_load_plan = QPushButton("Indlaes hegnsplan")
+        btn_load_plan.clicked.connect(self.load_plan)
         self.btn_mobile_guide = QPushButton("Start mobilguide")
         self.btn_mobile_guide.clicked.connect(self.start_mobile_guide)
         self.btn_sync = QPushButton("Start trådløs sync")
@@ -209,6 +223,8 @@ class MainWindow(QMainWindow):
         right.addWidget(self.map_quality_combo)
         right.addWidget(btn_ab)
         right.addWidget(btn_gen)
+        right.addWidget(btn_save_plan)
+        right.addWidget(btn_load_plan)
         right.addWidget(btn_save)
         right.addWidget(self.btn_mobile_guide)
         right.addWidget(self.btn_sync)
@@ -301,7 +317,7 @@ class MainWindow(QMainWindow):
     def import_agshare(self):
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Vaelg AgShare export ZIP",
+            "Vaelg AgShare/TASKDATA ZIP",
             str(Path.home() / "Downloads"),
             "AgShare ZIP (*.zip);;Alle filer (*.*)",
         )
@@ -309,14 +325,13 @@ class MainWindow(QMainWindow):
             return
         try:
             dst, count = import_agshare_zip(path, self.fields_path)
+            self.fields_path = planner_fields_path()
+            self.refresh_fields()
             QMessageBox.information(
                 self,
                 "AgShare importeret",
-                f"AgShare-georeference importeret for {count} marker.\n\n{dst}",
+                f"{count} marker er oprettet under:\n{self.fields_path}\n\nImportfil:\n{dst}",
             )
-            current = self.field_list.currentRow()
-            if current >= 0:
-                self.load_selected_field(current)
         except Exception as e:
             QMessageBox.critical(self, "AgShare fejl", str(e))
 
@@ -390,7 +405,9 @@ class MainWindow(QMainWindow):
         return max(0.1, spacing)
 
     def stake_spacing_label(self):
-        spacing = self.stake_spacing()
+        return self.spacing_text(self.stake_spacing())
+
+    def spacing_text(self, spacing):
         if abs(spacing - round(spacing)) < 1e-6:
             return f"{int(round(spacing))} m"
         return f"{spacing:.2f}".rstrip("0").rstrip(".").replace(".", ",") + " m"
@@ -415,21 +432,24 @@ class MainWindow(QMainWindow):
             self.fences, self.fold_areas = generate_equal_area_fences(self.field.boundary, self.a, self.b, self.zone_count())
             self.map.update_dynamic(self.fences, self.a, self.b, sync_handles=False)
             self.drive_map.update_dynamic(self.fences, self.a, self.b, self.gps_local, sync_handles=True)
-            self.fence_combo.blockSignals(True)
-            self.fence_combo.clear()
-            for f in self.fences:
-                self.fence_combo.addItem(f.name)
-            if selected_fence:
-                idx = self.fence_combo.findText(selected_fence)
-                if idx >= 0:
-                    self.fence_combo.setCurrentIndex(idx)
-            self.fence_combo.blockSignals(False)
+            self.refresh_fence_combo(selected_fence)
             self.update_result_text()
         except Exception as e:
             if not silent:
                 QMessageBox.critical(self, "Fejl", str(e))
             else:
                 self.info.setPlainText(f"Kan ikke generere hegn endnu:\n{e}")
+
+    def refresh_fence_combo(self, selected_fence=""):
+        self.fence_combo.blockSignals(True)
+        self.fence_combo.clear()
+        for f in self.fences:
+            self.fence_combo.addItem(f.name)
+        if selected_fence:
+            idx = self.fence_combo.findText(selected_fence)
+            if idx >= 0:
+                self.fence_combo.setCurrentIndex(idx)
+        self.fence_combo.blockSignals(False)
 
     def update_result_text(self):
         spacing = self.stake_spacing()
@@ -469,6 +489,67 @@ class MainWindow(QMainWindow):
             dst = save_as_new_field(self.field, self.fences, self.zone_count())
             QMessageBox.information(self, "Gemt", f"Ny mark gemt:\n{dst}")
             self.refresh_fields()
+        except Exception as e:
+            QMessageBox.critical(self, "Fejl", str(e))
+
+    def save_plan(self):
+        if not self.field or not self.fences:
+            QMessageBox.warning(self, "Mangler hegnsplan", "Generer zoner/hegn foerst.")
+            return
+        try:
+            default_path = plans_dir(self.field) / f"{self.field.name}_{self.zone_count()}_zoner.json"
+            path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Gem hegnsplan",
+                str(default_path),
+                "Fence Planner plan (*.json)",
+            )
+            if not path:
+                return
+            dst = save_fence_plan(
+                self.field,
+                self.fences,
+                self.fold_areas,
+                self.zone_count(),
+                self.stake_spacing(),
+                self.a,
+                self.b,
+                path,
+            )
+            QMessageBox.information(self, "Hegnsplan gemt", f"Hegnsplan gemt:\n{dst}")
+        except Exception as e:
+            QMessageBox.critical(self, "Fejl", str(e))
+
+    def load_plan(self):
+        if not self.field:
+            QMessageBox.warning(self, "Ingen mark", "Vaelg mark foerst.")
+            return
+        try:
+            path, _ = QFileDialog.getOpenFileName(
+                self,
+                "Indlaes hegnsplan",
+                str(plans_dir(self.field)),
+                "Fence Planner plan (*.json)",
+            )
+            if not path:
+                return
+            plan = load_fence_plan(path)
+            self.zone_count_spin.blockSignals(True)
+            self.stake_spacing_combo.blockSignals(True)
+            self.zone_count_spin.setValue(max(2, plan["zone_count"]))
+            self.stake_spacing_combo.setCurrentText(self.spacing_text(plan["stake_spacing_m"]))
+            self.zone_count_spin.blockSignals(False)
+            self.stake_spacing_combo.blockSignals(False)
+            self.a = plan["a"]
+            self.b = plan["b"]
+            self.fences = plan["fences"]
+            self.fold_areas = plan["fold_areas"]
+            self.await_ab = False
+            self.refresh_fence_combo()
+            self.map.draw(self.field.boundary, self.fences, self.a, self.b)
+            self.drive_map.draw(self.field.boundary, self.fences, self.a, self.b, self.gps_local)
+            self.update_result_text()
+            QMessageBox.information(self, "Hegnsplan indlaest", f"Hegnsplan indlaest:\n{plan['path']}")
         except Exception as e:
             QMessageBox.critical(self, "Fejl", str(e))
 

@@ -1,4 +1,4 @@
-# AgOpenGPS Fence Planner v1.0.3
+# AgOpenGPS Fence Planner v1.0.4
 
 Windows-program til planlægning af hegn, zoner og pælepunkter ud fra AgOpenGPS-markfiler.
 
@@ -9,6 +9,8 @@ Windows-program til planlægning af hegn, zoner og pælepunkter ud fra AgOpenGPS
 - Læser `Boundary.txt` og `Field.kml`
 - Kan bruge `zISOXML\v3/v4\TASKDATA.XML` som fallback, når `Field.kml` mangler
 - Kan importere én samlet AgShare export ZIP og bruge `geojson/fields.geojson` som georeference
+- Opretter egne Fence Planner-markmapper under `Documents\FencePlanner\Fields`
+- Kan gemme og indlæse hegnsplaner igen senere fra markens `FencePlans`-mappe
 - Viser satellitkort, når marken har georeference fra `Field.kml`, `TASKDATA.XML` eller AgShare ZIP
 - Flytbare A/B-punkter
 - Live opdatering af zoner og hegn
@@ -47,5 +49,5 @@ Læg dem i samme mappe og kør `Installer_fra_lokal_pakke.bat`.
 ## SHA256
 
 ```text
-13707BC0FDED2BB21EB34AE7EDEDCCC4E667F0915506BA472CC3F50FF7238A0B
+A9F36EB8A59944281E8F5D2A03EB81C265325C210C0B217DDCA7540EC1D4A1FB
 ```

@@ -10,6 +10,8 @@ Windows-program til planlægning af rotationszoner og hegnslinjer til AgOpenGPS.
 - Læser `Field.kml`, hvis den findes
 - Kan bruge `zISOXML\v3/v4\TASKDATA.XML` som fallback, når `Field.kml` mangler
 - Kan importere én samlet AgShare export ZIP og bruge `geojson/fields.geojson` som georeference
+- Opretter egne markmapper under `Documents\FencePlanner\Fields`
+- Kan gemme og indlæse hegnsplaner igen senere fra markens `FencePlans`-mappe
 - Viser Esri World Imagery satellitkort, når marken har georeference fra `Field.kml`, `TASKDATA.XML` eller AgShare ZIP
 - Kan skifte mellem `Esri nyeste` og `Esri Clarity`
 - Har kortkvalitet `Høj` eller `Normal`

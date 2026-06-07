@@ -1,17 +1,29 @@
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 import json
+import math
 import re
 import shutil
 import xml.etree.ElementTree as ET
 import zipfile
 
-from .models import FieldData, Point
+from .models import FenceLine, FieldData, Point
+
+EARTH_RADIUS_M = 6378137.0
 
 
 def default_fields_path():
     return Path.home() / "Documents" / "AgOpenGPS" / "Fields"
+
+
+def planner_root_path():
+    return Path.home() / "Documents" / "FencePlanner"
+
+
+def planner_fields_path():
+    return planner_root_path() / "Fields"
 
 
 def find_file(folder, name):
@@ -47,15 +59,116 @@ def import_agshare_zip(source_zip, fields_path):
     if not source_zip.exists():
         raise ValueError("AgShare ZIP blev ikke fundet.")
 
-    count = count_agshare_fields(source_zip)
+    rings = read_agshare_rings(source_zip)
+    count = len(rings)
     if count <= 0:
         raise ValueError("AgShare ZIP indeholder ingen marker med polygon-georeference.")
 
-    dst_dir = agshare_store_dir(fields_path)
-    dst_dir.mkdir(parents=True, exist_ok=True)
-    dst = agshare_zip_path(fields_path)
+    root = planner_root_path()
+    imports_dir = root / "Imports"
+    imports_dir.mkdir(parents=True, exist_ok=True)
+    dst = imports_dir / source_zip.name
     shutil.copy2(source_zip, dst)
-    return dst, count
+
+    fields_dir = planner_fields_path()
+    fields_dir.mkdir(parents=True, exist_ok=True)
+    created = 0
+    for item in rings:
+        write_planner_field(fields_dir, item["name"], item["ring"], dst)
+        created += 1
+
+    return dst, created
+
+
+def safe_folder_name(name):
+    cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", (name or "Mark").strip())
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .")
+    return cleaned or "Mark"
+
+
+def unique_path(path):
+    if not path.exists():
+        return path
+    return path
+
+
+def write_planner_field(fields_dir, name, ring, source_zip):
+    folder = fields_dir / safe_folder_name(name)
+    folder.mkdir(parents=True, exist_ok=True)
+    plans_dir = folder / "FencePlans"
+    plans_dir.mkdir(exist_ok=True)
+
+    boundary = geo_ring_to_local_points(ring)
+    write_boundary(folder / "Boundary.txt", boundary)
+    write_field_kml(folder / "Field.kml", name, ring)
+    (folder / "TrackLines.txt").touch(exist_ok=True)
+    metadata = {
+        "format": "FencePlannerField",
+        "version": 1,
+        "name": name,
+        "source": "AgShare ZIP",
+        "source_zip": str(source_zip),
+        "georef_points": len(ring),
+    }
+    (folder / "fenceplanner_field.json").write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+    return folder
+
+
+def geo_ring_to_local_points(ring):
+    lat0 = sum(lat for lat, lon in ring) / len(ring)
+    lon0 = sum(lon for lat, lon in ring) / len(ring)
+    cos_lat0 = math.cos(math.radians(lat0))
+    return [
+        Point(
+            math.radians(lon - lon0) * EARTH_RADIUS_M * cos_lat0,
+            math.radians(lat - lat0) * EARTH_RADIUS_M,
+        )
+        for lat, lon in ring
+    ]
+
+
+def write_boundary(path, boundary):
+    lines = ["$Boundary"]
+    lines.extend(f"{p.x:.3f},{p.y:.3f}" for p in boundary)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def write_field_kml(path, name, ring):
+    coords = [f"{lon:.12f},{lat:.12f},0" for lat, lon in ring]
+    if ring and ring[0] != ring[-1]:
+        lat, lon = ring[0]
+        coords.append(f"{lon:.12f},{lat:.12f},0")
+    text = f"""<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>{xml_escape(name)}</name>
+    <Placemark>
+      <name>{xml_escape(name)}</name>
+      <Polygon>
+        <outerBoundaryIs>
+          <LinearRing>
+            <coordinates>
+              {' '.join(coords)}
+            </coordinates>
+          </LinearRing>
+        </outerBoundaryIs>
+      </Polygon>
+    </Placemark>
+  </Document>
+</kml>
+"""
+    path.write_text(text, encoding="utf-8")
+
+
+def xml_escape(text):
+    return (
+        str(text)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&apos;")
+    )
 
 
 def count_agshare_fields(zip_path):
@@ -397,3 +510,87 @@ def save_as_new_field(field, fences, fold_count):
     track_path = find_file(dst, "TrackLines.txt") or (dst / "TrackLines.txt")
     track_path.write_text(merge_tracklines(field.tracklines_text, fences), encoding="utf-8")
     return dst
+
+
+def plans_dir(field):
+    path = field.path / "FencePlans"
+    path.mkdir(exist_ok=True)
+    return path
+
+
+def point_to_data(point):
+    return {"x": round(point.x, 6), "y": round(point.y, 6)}
+
+
+def point_from_data(data):
+    return Point(float(data["x"]), float(data["y"]))
+
+
+def fence_to_data(fence):
+    return {
+        "name": fence.name,
+        "start": point_to_data(fence.start),
+        "end": point_to_data(fence.end),
+        "angle_rad": fence.angle_rad,
+        "length_m": fence.length_m,
+    }
+
+
+def fence_from_data(data):
+    return FenceLine(
+        data.get("name", "Hegn"),
+        point_from_data(data["start"]),
+        point_from_data(data["end"]),
+        float(data.get("angle_rad", 0.0)),
+        float(data.get("length_m", 0.0)),
+    )
+
+
+def save_fence_plan(field, fences, fold_areas, zone_count, stake_spacing_m, a=None, b=None, destination=None):
+    if not fences:
+        raise ValueError("Der er ingen hegnsplan at gemme.")
+
+    if destination:
+        path = Path(destination)
+    else:
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = plans_dir(field) / f"{safe_folder_name(field.name)}_{zone_count}_zoner_{stamp}.json"
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = {
+        "format": "FencePlannerPlan",
+        "version": 1,
+        "field": field.name,
+        "created": datetime.now().isoformat(timespec="seconds"),
+        "settings": {
+            "zone_count": int(zone_count),
+            "stake_spacing_m": float(stake_spacing_m),
+        },
+        "ab": {
+            "a": point_to_data(a) if a else None,
+            "b": point_to_data(b) if b else None,
+        },
+        "fold_areas": [float(area) for area in fold_areas],
+        "fences": [fence_to_data(fence) for fence in fences],
+    }
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    return path
+
+
+def load_fence_plan(path):
+    path = Path(path)
+    data = json.loads(path.read_text(encoding="utf-8-sig"))
+    if data.get("format") != "FencePlannerPlan":
+        raise ValueError("Filen er ikke en Fence Planner hegnsplan.")
+    settings = data.get("settings") or {}
+    ab = data.get("ab") or {}
+    return {
+        "field": data.get("field", ""),
+        "zone_count": int(settings.get("zone_count", 2)),
+        "stake_spacing_m": float(settings.get("stake_spacing_m", 25.0)),
+        "a": point_from_data(ab["a"]) if ab.get("a") else None,
+        "b": point_from_data(ab["b"]) if ab.get("b") else None,
+        "fold_areas": [float(area) for area in data.get("fold_areas", [])],
+        "fences": [fence_from_data(fence) for fence in data.get("fences", [])],
+        "path": path,
+    }
