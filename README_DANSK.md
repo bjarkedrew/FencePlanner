@@ -25,6 +25,11 @@ Windows-program til planlægning af rotationszoner og hegnslinjer til AgOpenGPS.
 - Skriver hegnslinjer til `TrackLines.txt`
 - Har KØR-fane med simpleRTK2B/NMEA GPS via COM-port
 - Viser GPS-position og afstand til valgt hegnslinje
+- Kan eksportere flere gemte hegnsplaner til en mobilsky-side
+
+## Mobilsky
+
+`Eksporter mobilsky` laver en mappe med `index.html` og `data.json`, som kan hostes på en HTTPS-side. Hvis den uploades til GitHub Pages fra et offentligt repository, bliver marknavne og GPS-koordinater offentlige.
 
 ## Installer som Windows-program
 

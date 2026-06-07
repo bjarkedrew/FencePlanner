@@ -24,6 +24,7 @@ from .agopen import (
     save_as_new_field,
     save_fence_plan,
 )
+from .cloud_export import export_mobile_cloud
 from .geometry import polygon_area, generate_equal_area_fences, signed_cross_track, stake_points_on_line
 from .kml_transform import KmlLocalTransform
 from .map_canvas import MapCanvas
@@ -206,6 +207,8 @@ class MainWindow(QMainWindow):
         btn_load_plan.clicked.connect(self.load_plan)
         self.btn_mobile_guide = QPushButton("Start mobilguide")
         self.btn_mobile_guide.clicked.connect(self.start_mobile_guide)
+        btn_mobile_cloud = QPushButton("Eksporter mobilsky")
+        btn_mobile_cloud.clicked.connect(self.export_mobile_cloud)
         self.btn_sync = QPushButton("Start trådløs sync")
         self.btn_sync.clicked.connect(self.toggle_sync_server)
         self.sync_label = QLabel("Sync: stoppet")
@@ -227,6 +230,7 @@ class MainWindow(QMainWindow):
         right.addWidget(btn_load_plan)
         right.addWidget(btn_save)
         right.addWidget(self.btn_mobile_guide)
+        right.addWidget(btn_mobile_cloud)
         right.addWidget(self.btn_sync)
         right.addWidget(self.sync_label)
         right.addWidget(QLabel("Resultat"))
@@ -602,6 +606,21 @@ class MainWindow(QMainWindow):
             self.a,
             self.b,
         )
+
+    def export_mobile_cloud(self):
+        default_dir = Path.home() / "Documents" / "FencePlanner" / "MobileCloud"
+        folder = QFileDialog.getExistingDirectory(self, "Vaelg mappe til mobilsky", str(default_dir.parent))
+        if not folder:
+            return
+        try:
+            dst, count = export_mobile_cloud(folder)
+            QMessageBox.information(
+                self,
+                "Mobilsky eksporteret",
+                f"{count} hegnsplaner er eksporteret.\n\nAabn eller upload:\n{dst / 'index.html'}",
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "Mobilsky fejl", str(e))
 
     def toggle_sync_server(self):
         if self.sync_server:

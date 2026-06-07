@@ -12,3 +12,5 @@ mobile/**/node_modules/
 .expo/
 Fields/
 Imports/
+MobileCloud/
+docs/mobile/data.json
