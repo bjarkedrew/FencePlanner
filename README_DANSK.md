@@ -26,7 +26,15 @@ Windows-program til planlægning af rotationszoner og hegnslinjer til AgOpenGPS.
 
 ## Installer som Windows-program
 
-Kør:
+Fra GitHub release kan du normalt nøjes med at downloade og køre:
+
+```bat
+FencePlanner_Online_Installer.bat
+```
+
+Den henter selv nyeste programpakke og installerer Fence Planner.
+
+Hvis du arbejder direkte fra kildekoden, kan du køre:
 
 ```bat
 install_program.bat

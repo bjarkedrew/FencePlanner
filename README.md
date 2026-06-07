@@ -78,21 +78,20 @@ Det er især tænkt til praktisk markarbejde, hvor planen laves på computeren, 
 
 3. Åbn den nyeste release.
 
-4. Download disse filer:
+4. Download denne fil:
 
 ```text
-FencePlanner_Setup.bat
-FencePlanner_Setup.ps1
+FencePlanner_Online_Installer.bat
 ```
 
-Du behøver normalt ikke selv downloade zip-pakken, hvis setup-filen er sat korrekt op.
+Den henter selv resten af programmet fra nyeste release.
 
-5. Læg begge filer i samme mappe, fx `Downloads`.
+5. Læg filen i `Downloads`.
 
 6. Højreklik på:
 
 ```text
-FencePlanner_Setup.bat
+FencePlanner_Online_Installer.bat
 ```
 
 7. Vælg:

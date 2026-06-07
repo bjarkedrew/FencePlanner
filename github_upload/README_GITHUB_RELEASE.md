@@ -16,6 +16,10 @@ Upload filerne i denne mappe til en GitHub Release.
   - Dobbeltklik-venlig wrapper til `FencePlanner_Setup.ps1`.
   - Rediger linjen `set "PACKAGE_URL=..."` så den peger på GitHub release-linket til zip-filen.
 
+- `FencePlanner_Online_Installer.bat`
+  - Anbefalet installer til brugeren.
+  - En enkelt fil, som selv downloader nyeste release-pakke og installerer programmet.
+
 - `Installer_fra_lokal_pakke.bat`
   - Kun til lokal test.
   - Installerer fra zippen, hvis zippen ligger i samme mappe.
@@ -31,6 +35,6 @@ Upload filerne i denne mappe til en GitHub Release.
    set "PACKAGE_URL=DIT_DOWNLOAD_LINK_HER"
    ```
 
-5. Upload også `FencePlanner_Setup.bat` og `FencePlanner_Setup.ps1`.
+5. Upload også `FencePlanner_Online_Installer.bat`, `FencePlanner_Setup.bat` og `FencePlanner_Setup.ps1`.
 
-Brugeren skal derefter kun downloade `FencePlanner_Setup.bat` og køre den.
+Brugeren skal derefter kun downloade `FencePlanner_Online_Installer.bat` og køre den.

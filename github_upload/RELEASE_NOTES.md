@@ -1,4 +1,4 @@
-# AgOpenGPS Fence Planner v1.0.2
+# AgOpenGPS Fence Planner v1.0.3
 
 Windows-program til planlægning af hegn, zoner og pælepunkter ud fra AgOpenGPS-markfiler.
 
@@ -25,10 +25,9 @@ Windows-program til planlægning af hegn, zoner og pælepunkter ud fra AgOpenGPS
 
 For almindelig installation:
 
-1. Download `FencePlanner_Setup.bat`
-2. Download `FencePlanner_Setup.ps1`
-3. Læg dem i samme mappe
-4. Kør `FencePlanner_Setup.bat`
+1. Download `FencePlanner_Online_Installer.bat`
+2. Kør filen
+3. Installeren henter selv resten af programmet fra nyeste GitHub release
 
 Hvis online setup ikke er sat op endnu, kan man i stedet downloade:
 
@@ -40,6 +39,7 @@ Læg dem i samme mappe og kør `Installer_fra_lokal_pakke.bat`.
 ## Release assets
 
 - `AgOpenGPS_FencePlanner_package.zip`
+- `FencePlanner_Online_Installer.bat`
 - `FencePlanner_Setup.bat`
 - `FencePlanner_Setup.ps1`
 - `Installer_fra_lokal_pakke.bat`
