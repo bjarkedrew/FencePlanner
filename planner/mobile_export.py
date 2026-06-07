@@ -22,7 +22,7 @@ def point_payload(point, transform=None):
 
 def build_mobile_payload(field, fences, fold_areas, transform, zone_count, stake_spacing_m, a=None, b=None):
     if not transform:
-        raise ValueError("Mobil-eksport kræver Field.kml eller TASKDATA.XML/georeference.")
+        raise ValueError("Mobil-eksport kræver Field.kml, TASKDATA.XML eller AgShare ZIP/georeference.")
     if not fences:
         raise ValueError("Generér zoner/hegn før mobil-eksport.")
 

@@ -9,7 +9,8 @@ Windows-program til planlægning af rotationszoner og hegnslinjer til AgOpenGPS.
 - Læser `Boundary.txt`
 - Læser `Field.kml`, hvis den findes
 - Kan bruge `zISOXML\v3/v4\TASKDATA.XML` som fallback, når `Field.kml` mangler
-- Viser Esri World Imagery satellitkort, når marken har georeference fra `Field.kml` eller `TASKDATA.XML`
+- Kan importere én samlet AgShare export ZIP og bruge `geojson/fields.geojson` som georeference
+- Viser Esri World Imagery satellitkort, når marken har georeference fra `Field.kml`, `TASKDATA.XML` eller AgShare ZIP
 - Kan skifte mellem `Esri nyeste` og `Esri Clarity`
 - Har kortkvalitet `Høj` eller `Normal`
 - Har flytbare A/B-punkter direkte på kortet

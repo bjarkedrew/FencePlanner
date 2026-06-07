@@ -13,7 +13,7 @@ from pathlib import Path
 
 import qrcode
 
-from .agopen import default_fields_path, list_fields, load_field, save_as_new_field
+from .agopen import default_fields_path, import_agshare_zip, list_fields, load_field, save_as_new_field
 from .geometry import polygon_area, generate_equal_area_fences, signed_cross_track, stake_points_on_line
 from .kml_transform import KmlLocalTransform
 from .map_canvas import MapCanvas
@@ -145,11 +145,14 @@ class MainWindow(QMainWindow):
         self.path_label = QLabel()
         btn_path = QPushButton("Vælg Fields-mappe")
         btn_path.clicked.connect(self.choose_fields_path)
+        btn_agshare = QPushButton("Importer AgShare ZIP")
+        btn_agshare.clicked.connect(self.import_agshare)
         self.field_list = QListWidget()
         self.field_list.currentRowChanged.connect(self.load_selected_field)
         left.addWidget(QLabel("AgOpenGPS Fields"))
         left.addWidget(self.path_label)
         left.addWidget(btn_path)
+        left.addWidget(btn_agshare)
         left.addWidget(QLabel("Marker"))
         left.addWidget(self.field_list)
 
@@ -295,6 +298,28 @@ class MainWindow(QMainWindow):
             self.fields_path = Path(p)
             self.refresh_fields()
 
+    def import_agshare(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Vaelg AgShare export ZIP",
+            str(Path.home() / "Downloads"),
+            "AgShare ZIP (*.zip);;Alle filer (*.*)",
+        )
+        if not path:
+            return
+        try:
+            dst, count = import_agshare_zip(path, self.fields_path)
+            QMessageBox.information(
+                self,
+                "AgShare importeret",
+                f"AgShare-georeference importeret for {count} marker.\n\n{dst}",
+            )
+            current = self.field_list.currentRow()
+            if current >= 0:
+                self.load_selected_field(current)
+        except Exception as e:
+            QMessageBox.critical(self, "AgShare fejl", str(e))
+
     def load_selected_field(self, row):
         if row < 0:
             return
@@ -308,7 +333,7 @@ class MainWindow(QMainWindow):
             self.drive_map.fit_to_boundary(self.field.boundary, self.transform)
             ha = polygon_area(self.field.boundary) / 10000
             georef_source = self.field.georef_source or "mangler"
-            map_status = "satellitkort OK" if self.transform else "satellitkort kræver Field.kml eller TASKDATA.XML"
+            map_status = "satellitkort OK" if self.transform else "satellitkort kræver Field.kml, TASKDATA.XML eller AgShare ZIP"
             self.info.setPlainText(
                 f"Mark: {self.field.name}\n"
                 f"Areal: {ha:.2f} ha\n"
@@ -452,7 +477,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Mangler zoner", "Generér zoner først.")
             return
         if not self.transform:
-            QMessageBox.warning(self, "Mangler georeference", "Mobil-eksport kræver Field.kml eller TASKDATA.XML/georeference.")
+            QMessageBox.warning(self, "Mangler georeference", "Mobil-eksport kræver Field.kml, TASKDATA.XML eller AgShare ZIP/georeference.")
             return
 
         default_name = f"{self.field.name}_FenceGuide.html"
@@ -485,7 +510,7 @@ class MainWindow(QMainWindow):
         if not self.field or not self.fences:
             raise ValueError("Generér zoner først.")
         if not self.transform:
-            raise ValueError("Trådløs sync kræver Field.kml eller TASKDATA.XML/georeference.")
+            raise ValueError("Trådløs sync kræver Field.kml, TASKDATA.XML eller AgShare ZIP/georeference.")
         return build_mobile_payload(
             self.field,
             self.fences,
@@ -749,7 +774,7 @@ class MainWindow(QMainWindow):
         ]
         if not self.transform:
             self.big_distance.setText("MANGLER GEO")
-            lines.append("Ingen Field.kml eller TASKDATA.XML/georeference fundet.")
+            lines.append("Ingen Field.kml, TASKDATA.XML eller AgShare ZIP/georeference fundet.")
         elif self.fences and self.fence_combo.currentIndex() >= 0:
             self.gps_local = self.transform.latlon_to_local(fix.lat, fix.lon)
             f = self.fences[self.fence_combo.currentIndex()]

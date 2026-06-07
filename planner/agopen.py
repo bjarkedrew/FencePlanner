@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 import re
 import shutil
 import xml.etree.ElementTree as ET
+import zipfile
 
 from .models import FieldData, Point
 
@@ -30,6 +32,97 @@ def list_fields(fields_path):
         [p for p in fields_path.iterdir() if p.is_dir() and find_file(p, "Boundary.txt")],
         key=lambda p: p.name.lower(),
     )
+
+
+def agshare_store_dir(fields_path):
+    return fields_path / "_FencePlanner"
+
+
+def agshare_zip_path(fields_path):
+    return agshare_store_dir(fields_path) / "AgShare_Export.zip"
+
+
+def import_agshare_zip(source_zip, fields_path):
+    source_zip = Path(source_zip)
+    if not source_zip.exists():
+        raise ValueError("AgShare ZIP blev ikke fundet.")
+
+    count = count_agshare_fields(source_zip)
+    if count <= 0:
+        raise ValueError("AgShare ZIP indeholder ingen marker med polygon-georeference.")
+
+    dst_dir = agshare_store_dir(fields_path)
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    dst = agshare_zip_path(fields_path)
+    shutil.copy2(source_zip, dst)
+    return dst, count
+
+
+def count_agshare_fields(zip_path):
+    return len(read_agshare_rings(zip_path))
+
+
+def read_agshare_rings(zip_path, wanted_name=None):
+    zip_path = Path(zip_path)
+    if not zip_path.exists():
+        return []
+
+    try:
+        with zipfile.ZipFile(zip_path) as zf:
+            names = {name.lower(): name for name in zf.namelist()}
+            geojson_name = names.get("geojson/fields.geojson")
+            if not geojson_name:
+                return []
+            with zf.open(geojson_name) as f:
+                data = json.loads(f.read().decode("utf-8-sig"))
+    except (OSError, zipfile.BadZipFile, json.JSONDecodeError, UnicodeDecodeError):
+        return []
+
+    rings = []
+    for feature in data.get("features", []):
+        props = feature.get("properties") or {}
+        geom = feature.get("geometry") or {}
+        if props.get("type") != "field":
+            continue
+
+        field_name = props.get("name") or props.get("fieldName") or ""
+        coords = best_geojson_ring(geom)
+        if len(coords) < 3:
+            continue
+
+        ring = []
+        for lon, lat, *_ in coords:
+            try:
+                lat = float(lat)
+                lon = float(lon)
+            except (TypeError, ValueError):
+                continue
+            if -90 <= lat <= 90 and -180 <= lon <= 180:
+                ring.append((lat, lon))
+
+        if len(ring) >= 3:
+            if abs(ring[0][0] - ring[-1][0]) < 1e-9 and abs(ring[0][1] - ring[-1][1]) < 1e-9:
+                ring.pop()
+            rings.append(
+                {
+                    "name": field_name,
+                    "path": zip_path,
+                    "ring": ring,
+                    "score": name_match_score(field_name, wanted_name),
+                }
+            )
+    return rings
+
+
+def best_geojson_ring(geom):
+    geom_type = geom.get("type")
+    coords = geom.get("coordinates") or []
+    if geom_type == "Polygon" and coords:
+        return max(coords, key=len)
+    if geom_type == "MultiPolygon" and coords:
+        rings = [ring for polygon in coords for ring in polygon]
+        return max(rings, key=len) if rings else []
+    return []
 
 
 def read_boundary(path):
@@ -168,6 +261,18 @@ def normalize_name(name):
     return re.sub(r"\s+", " ", name.strip().lower())
 
 
+def name_match_score(field_name, wanted_name=None):
+    if not wanted_name or not field_name:
+        return 0
+    a = normalize_name(field_name)
+    b = normalize_name(wanted_name)
+    if a == b:
+        return 3
+    if a in b or b in a:
+        return 2
+    return 0
+
+
 def read_taskdata_ring(field_path, boundary_count=None):
     candidates = []
     for path in taskdata_candidates(field_path):
@@ -187,6 +292,44 @@ def read_taskdata_ring(field_path, boundary_count=None):
     return best["ring"], label
 
 
+def agshare_candidates(field_path):
+    fields_path = field_path.parent
+    preferred = [agshare_zip_path(fields_path)]
+    seen = set()
+    for path in preferred:
+        key = str(path).lower()
+        if key not in seen and path.exists():
+            seen.add(key)
+            yield path
+
+    store = agshare_store_dir(fields_path)
+    if store.exists():
+        for path in store.glob("*.zip"):
+            key = str(path).lower()
+            if key not in seen:
+                seen.add(key)
+                yield path
+
+
+def read_agshare_ring(field_path, boundary_count=None):
+    candidates = []
+    for path in agshare_candidates(field_path):
+        candidates.extend(read_agshare_rings(path, field_path.name))
+
+    if not candidates:
+        return None, ""
+
+    def rank(candidate):
+        ring = candidate["ring"]
+        count_penalty = abs(len(ring) - boundary_count) if boundary_count else 0
+        return (candidate["score"], -count_penalty, len(ring))
+
+    best = max(candidates, key=rank)
+    if best["score"] <= 0:
+        return None, ""
+    return best["ring"], f"AgShare ZIP ({best['name']})"
+
+
 def load_field(field_path):
     boundary_path = find_file(field_path, "Boundary.txt")
     if not boundary_path:
@@ -197,6 +340,8 @@ def load_field(field_path):
     georef_source = "Field.kml" if georef else ""
     if not georef:
         georef, georef_source = read_taskdata_ring(field_path, len(boundary))
+    if not georef:
+        georef, georef_source = read_agshare_ring(field_path, len(boundary))
 
     track = ""
     track_path = find_file(field_path, "TrackLines.txt")
