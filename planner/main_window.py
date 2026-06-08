@@ -142,11 +142,11 @@ class MainWindow(QMainWindow):
         self.refresh_fields()
 
     def setup_ui(self):
-        tabs = QTabWidget()
-        tabs.addTab(self.build_plan_tab(), "Planlæg")
-        tabs.addTab(self.build_drive_tab(), "KØR")
-        tabs.addTab(self.build_about_tab(), "Om / Android")
-        self.setCentralWidget(tabs)
+        self.tabs = QTabWidget()
+        self.tabs.addTab(self.build_plan_tab(), "Planlæg")
+        self.tabs.addTab(self.build_drive_tab(), "KØR")
+        self.tabs.addTab(self.build_about_tab(), "Om / Android")
+        self.setCentralWidget(self.tabs)
 
     def build_plan_tab(self):
         w = QWidget()
@@ -205,6 +205,8 @@ class MainWindow(QMainWindow):
         btn_save_plan.clicked.connect(self.save_plan)
         btn_load_plan = QPushButton("Indlaes hegnsplan")
         btn_load_plan.clicked.connect(self.load_plan)
+        btn_drive_field = QPushButton("Koer mark")
+        btn_drive_field.clicked.connect(self.go_to_drive)
         self.btn_mobile_guide = QPushButton("Start mobilguide")
         self.btn_mobile_guide.clicked.connect(self.start_mobile_guide)
         btn_mobile_cloud = QPushButton("Eksporter mobilsky")
@@ -228,6 +230,7 @@ class MainWindow(QMainWindow):
         right.addWidget(btn_gen)
         right.addWidget(btn_save_plan)
         right.addWidget(btn_load_plan)
+        right.addWidget(btn_drive_field)
         right.addWidget(btn_save)
         right.addWidget(self.btn_mobile_guide)
         right.addWidget(btn_mobile_cloud)
@@ -270,6 +273,7 @@ class MainWindow(QMainWindow):
         btn_stop = QPushButton("Stop GPS")
         btn_stop.clicked.connect(self.stop_gps)
         self.fence_combo = QComboBox()
+        self.fence_combo.currentIndexChanged.connect(self.update_drive_line_info)
         self.big_distance = QLabel("INGEN GPS")
         self.big_distance.setObjectName("BigNumber")
         self.drive_info = QTextEdit()
@@ -360,6 +364,8 @@ class MainWindow(QMainWindow):
                 f"{map_status}\n"
                 f"Kort: {self.basemap_combo.currentText()} / {self.map_quality_combo.currentText()}"
             )
+            self.refresh_fence_combo()
+            self.update_drive_line_info()
         except Exception as e:
             QMessageBox.critical(self, "Fejl", str(e))
 
@@ -454,6 +460,53 @@ class MainWindow(QMainWindow):
             if idx >= 0:
                 self.fence_combo.setCurrentIndex(idx)
         self.fence_combo.blockSignals(False)
+        self.update_drive_line_info()
+
+    def go_to_drive(self):
+        if not self.field:
+            QMessageBox.warning(self, "Ingen mark", "Vaelg mark foerst.")
+            return
+        if not self.fences:
+            QMessageBox.warning(self, "Ingen hegnslinjer", "Generer zoner eller indlaes en hegnsplan foerst.")
+            return
+        self.drive_map.draw(self.field.boundary, self.fences, self.a, self.b, self.gps_local)
+        self.update_drive_line_info()
+        self.tabs.setCurrentIndex(1)
+
+    def update_drive_line_info(self, *_):
+        if not hasattr(self, "drive_info"):
+            return
+        lines = []
+        if self.field:
+            lines.append(f"Mark: {self.field.name}")
+            lines.append(f"Georeference: {self.field.georef_source or 'mangler'}")
+        else:
+            lines.append("Vaelg en mark paa Planlaeg-fanen.")
+
+        if self.fences and self.fence_combo.currentIndex() >= 0:
+            fence = self.fences[self.fence_combo.currentIndex()]
+            stakes = stake_points_on_line(fence.start, fence.end, self.stake_spacing())
+            lines += [
+                "",
+                f"Valgt linje: {fence.name}",
+                f"Laengde: {fence.length_m:.1f} m",
+                f"Paele: {len(stakes)} stk ved {self.stake_spacing_label()}",
+            ]
+            if self.transform:
+                lat1, lon1 = self.transform.local_to_latlon(fence.start)
+                lat2, lon2 = self.transform.local_to_latlon(fence.end)
+                lines.append(f"Start GPS: {lat1:.7f}, {lon1:.7f}")
+                lines.append(f"Slut GPS:  {lat2:.7f}, {lon2:.7f}")
+            if self.gps_local:
+                xt = signed_cross_track(self.gps_local, fence.start, fence.end)
+                side = "VENSTRE" if xt > 0 else "HOJRE"
+                self.big_distance.setText(f"{abs(xt):.2f} m {side}")
+        else:
+            lines += ["", "Ingen hegnslinje valgt."]
+            if self.gps_thread:
+                self.big_distance.setText("INGEN LINJE")
+
+        self.drive_info.setPlainText("\n".join(lines))
 
     def update_result_text(self):
         spacing = self.stake_spacing()
@@ -882,6 +935,8 @@ class MainWindow(QMainWindow):
             side = "VENSTRE" if xt > 0 else "HØJRE"
             self.big_distance.setText(f"{abs(xt):.2f} m {side}")
             lines.append(f"Valgt: {f.name}")
+            lines.append(f"Laengde: {f.length_m:.1f} m")
+            lines.append(f"Paele: {len(stake_points_on_line(f.start, f.end, self.stake_spacing()))} stk ved {self.stake_spacing_label()}")
             lines.append(f"Afstand til linje: {abs(xt):.2f} m {side}")
             self.drive_map.update_dynamic(self.fences, self.a, self.b, self.gps_local, sync_handles=True)
         self.drive_info.setPlainText("\n".join(lines))

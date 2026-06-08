@@ -1,4 +1,4 @@
-# AgOpenGPS Fence Planner v1.0.5
+# AgOpenGPS Fence Planner v1.0.6
 
 Windows-program til planlægning af hegn, zoner og pælepunkter ud fra AgOpenGPS-markfiler.
 
@@ -23,6 +23,8 @@ Windows-program til planlægning af hegn, zoner og pælepunkter ud fra AgOpenGPS
 - Mobilguide med HTTPS-link og QR-kode
 - Telefonens GPS kan bruges som markør ude i marken
 - Mobilsky-eksport kan samle flere gemte hegnsplaner til en mobilside
+- `Koer mark` skifter direkte til KØR-fanen med valgt mark og hegnslinjer
+- KØR-fanen viser linjelængde, pæle og GPS-koordinater for valgt hegnslinje
 
 ## Download
 
@@ -50,5 +52,5 @@ Læg dem i samme mappe og kør `Installer_fra_lokal_pakke.bat`.
 ## SHA256
 
 ```text
-FA46E568CB85EF865371C4750281BC96B0561BAA887E340E68483A100CC640A3
+4277C9220D6EA8013E449FE77173FD58BC49FA08C1C96D0CFA2DED345EA688DD
 ```
