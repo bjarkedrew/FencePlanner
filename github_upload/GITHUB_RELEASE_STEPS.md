@@ -1,8 +1,8 @@
-# Sådan opretter du GitHub Release
+# Saadan opretter du GitHub Release
 
-## 1. Gå til dit GitHub repository
+## 1. Gaa til dit GitHub repository
 
-Åbn repoet i browseren.
+Aabn repoet i browseren.
 
 ## 2. Opret ny release
 
@@ -14,11 +14,11 @@ Releases -> Draft a new release
 
 ## 3. Udfyld release
 
-Brug:
+Brug naeste versionsnummer, fx:
 
 ```text
-Tag version: v1.0.1
-Release title: AgOpenGPS Fence Planner v1.0.1
+Tag version: v1.0.7
+Release title: AgOpenGPS Fence Planner v1.0.7
 ```
 
 Kopier teksten fra `RELEASE_NOTES.md` ind i beskrivelsen.
@@ -29,34 +29,11 @@ Upload disse filer som release assets:
 
 ```text
 AgOpenGPS_FencePlanner_package.zip
-FencePlanner_Setup.ps1
-FencePlanner_Setup.bat
+FencePlanner_Installer.bat
 Installer_fra_lokal_pakke.bat
 ```
 
-## 5. Ret setup-link
-
-Efter zippen er uploadet, får den et download-link i dette format:
-
-```text
-https://github.com/bjarkedrew/FencePlanner/releases/latest/download/AgOpenGPS_FencePlanner_package.zip
-```
-
-Åbn `FencePlanner_Setup.bat` og ret linjen:
-
-```bat
-set "PACKAGE_URL="
-```
-
-til:
-
-```bat
-set "PACKAGE_URL=https://github.com/bjarkedrew/FencePlanner/releases/latest/download/AgOpenGPS_FencePlanner_package.zip"
-```
-
-Upload derefter den rettede `FencePlanner_Setup.bat` igen til releasen.
-
-## 6. Publicer
+## 5. Publicer
 
 Klik:
 
@@ -67,6 +44,5 @@ Publish release
 Brugeren skal normalt kun downloade:
 
 ```text
-FencePlanner_Setup.bat
-FencePlanner_Setup.ps1
+FencePlanner_Installer.bat
 ```

@@ -546,7 +546,19 @@ def fence_from_data(data):
     )
 
 
-def save_fence_plan(field, fences, fold_areas, zone_count, stake_spacing_m, a=None, b=None, destination=None):
+def save_fence_plan(
+    field,
+    fences,
+    fold_areas,
+    zone_count,
+    stake_spacing_m,
+    a=None,
+    b=None,
+    destination=None,
+    zone_mode="Parallel",
+    fan_gap_m=0.0,
+    fan_points=None,
+):
     if not fences:
         raise ValueError("Der er ingen hegnsplan at gemme.")
 
@@ -565,10 +577,17 @@ def save_fence_plan(field, fences, fold_areas, zone_count, stake_spacing_m, a=No
         "settings": {
             "zone_count": int(zone_count),
             "stake_spacing_m": float(stake_spacing_m),
+            "zone_mode": zone_mode,
+            "fan_gap_m": float(fan_gap_m),
         },
         "ab": {
             "a": point_to_data(a) if a else None,
             "b": point_to_data(b) if b else None,
+        },
+        "fan_points": {
+            label: point_to_data(point)
+            for label, point in (fan_points or {}).items()
+            if point
         },
         "fold_areas": [float(area) for area in fold_areas],
         "fences": [fence_to_data(fence) for fence in fences],
@@ -584,12 +603,20 @@ def load_fence_plan(path):
         raise ValueError("Filen er ikke en Fence Planner hegnsplan.")
     settings = data.get("settings") or {}
     ab = data.get("ab") or {}
+    fan_points = data.get("fan_points") or {}
     return {
         "field": data.get("field", ""),
         "zone_count": int(settings.get("zone_count", 2)),
         "stake_spacing_m": float(settings.get("stake_spacing_m", 25.0)),
+        "zone_mode": settings.get("zone_mode", "Parallel"),
+        "fan_gap_m": float(settings.get("fan_gap_m", 0.0)),
         "a": point_from_data(ab["a"]) if ab.get("a") else None,
         "b": point_from_data(ab["b"]) if ab.get("b") else None,
+        "fan_points": {
+            label: point_from_data(fan_points[label])
+            for label in ["A1", "B1", "A2", "B2"]
+            if fan_points.get(label)
+        },
         "fold_areas": [float(area) for area in data.get("fold_areas", [])],
         "fences": [fence_from_data(fence) for fence in data.get("fences", [])],
         "path": path,

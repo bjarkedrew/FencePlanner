@@ -20,7 +20,18 @@ def point_payload(point, transform=None):
     return payload
 
 
-def build_mobile_payload(field, fences, fold_areas, transform, zone_count, stake_spacing_m, a=None, b=None):
+def build_mobile_payload(
+    field,
+    fences,
+    fold_areas,
+    transform,
+    zone_count,
+    stake_spacing_m,
+    a=None,
+    b=None,
+    zone_mode="Parallel",
+    fan_gap_m=0.0,
+):
     if not transform:
         raise ValueError("Mobil-eksport kræver Field.kml, TASKDATA.XML eller AgShare ZIP/georeference.")
     if not fences:
@@ -54,6 +65,8 @@ def build_mobile_payload(field, fences, fold_areas, transform, zone_count, stake
             "fence_count": len(fences),
             "stake_spacing_m": float(stake_spacing_m),
             "total_stakes": total_stakes,
+            "zone_mode": zone_mode,
+            "fan_gap_m": float(fan_gap_m),
         },
         "ab_line": {
             "a": point_payload(a, transform) if a else None,
@@ -68,9 +81,21 @@ def build_mobile_payload(field, fences, fold_areas, transform, zone_count, stake
     }
 
 
-def export_mobile_html(destination, field, fences, fold_areas, transform, zone_count, stake_spacing_m, a=None, b=None):
+def export_mobile_html(
+    destination,
+    field,
+    fences,
+    fold_areas,
+    transform,
+    zone_count,
+    stake_spacing_m,
+    a=None,
+    b=None,
+    zone_mode="Parallel",
+    fan_gap_m=0.0,
+):
     destination = Path(destination)
-    payload = build_mobile_payload(field, fences, fold_areas, transform, zone_count, stake_spacing_m, a, b)
+    payload = build_mobile_payload(field, fences, fold_areas, transform, zone_count, stake_spacing_m, a, b, zone_mode, fan_gap_m)
     destination.write_text(render_mobile_html(payload), encoding="utf-8")
     return destination
 
@@ -201,8 +226,9 @@ def render_mobile_html(payload):
 
     function updateMeta() {{
       const f = GUIDE.fences[selectedFenceIndex];
+      const mode = GUIDE.settings.zone_mode || 'Parallel';
       document.getElementById('meta').textContent =
-        `${{GUIDE.field.name}} · ${{GUIDE.settings.zone_count}} zoner · ${{GUIDE.settings.fence_count}} hegn · ${{GUIDE.settings.stake_spacing_m}} m pæleafstand · valgt: ${{f.name}} (${{f.length_m}} m)`;
+        `${{GUIDE.field.name}} · ${{mode}} · ${{GUIDE.settings.zone_count}} zoner · ${{GUIDE.settings.fence_count}} hegn · ${{GUIDE.settings.stake_spacing_m}} m pæleafstand · valgt: ${{f.name}} (${{f.length_m}} m)`;
     }}
 
     function updateGps(position) {{

@@ -37,6 +37,8 @@ def collect_cloud_guides(fields_path=None):
                     plan["stake_spacing_m"],
                     plan["a"],
                     plan["b"],
+                    plan.get("zone_mode", "Parallel"),
+                    plan.get("fan_gap_m", 0.0),
                 )
                 payload["plan"] = {
                     "name": plan_path.stem,
@@ -51,19 +53,23 @@ def collect_cloud_guides(fields_path=None):
 def export_mobile_cloud(destination, fields_path=None):
     destination = Path(destination)
     destination.mkdir(parents=True, exist_ok=True)
+    data = build_cloud_data(fields_path)
+    guides = data["guides"]
+    (destination / "data.json").write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    (destination / "index.html").write_text(render_cloud_html(), encoding="utf-8")
+    return destination, len(guides)
+
+
+def build_cloud_data(fields_path=None):
     guides = collect_cloud_guides(fields_path)
     if not guides:
         raise ValueError("Der blev ikke fundet gemte hegnsplaner med georeference.")
-
-    data = {
+    return {
         "format": "FencePlannerCloud",
         "version": 1,
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "guides": guides,
     }
-    (destination / "data.json").write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-    (destination / "index.html").write_text(render_cloud_html(), encoding="utf-8")
-    return destination, len(guides)
 
 
 def export_repo_mobile_cloud(repo_root):
@@ -74,7 +80,8 @@ def export_repo_mobile_cloud(repo_root):
     return export_mobile_cloud(destination)
 
 
-def render_cloud_html():
+def render_cloud_html(data_url="data.json"):
+    data_url_json = json.dumps(data_url)
     return """<!doctype html>
 <html lang="da">
 <head>
@@ -153,9 +160,12 @@ def render_cloud_html():
       return ((p.east - a.east) * vy - (p.north - a.north) * vx) / len;
     }
 
+    const DATA_URL = __DATA_URL__;
+
     async function loadCloud() {
       try {
-        const response = await fetch("data.json?ts=" + Date.now(), { cache: "no-store" });
+        const sep = DATA_URL.includes("?") ? "&" : "?";
+        const response = await fetch(DATA_URL + sep + "ts=" + Date.now(), { cache: "no-store" });
         cloud = await response.json();
         if (!cloud.guides || !cloud.guides.length) throw new Error("Ingen marker fundet i mobilsky.");
         fillGuides();
@@ -238,8 +248,9 @@ def render_cloud_html():
     function updateMeta() {
       if (!guide) return;
       const fence = guide.fences[selectedFenceIndex];
+      const mode = guide.settings.zone_mode || "Parallel";
       document.getElementById("meta").textContent =
-        guide.field.name + " · " + guide.settings.zone_count + " zoner · " + guide.settings.fence_count +
+        guide.field.name + " · " + mode + " · " + guide.settings.zone_count + " zoner · " + guide.settings.fence_count +
         " hegn · " + guide.settings.stake_spacing_m + " m pæleafstand · valgt: " + fence.name;
     }
 
@@ -294,4 +305,4 @@ def render_cloud_html():
   </script>
 </body>
 </html>
-"""
+""".replace("__DATA_URL__", data_url_json)

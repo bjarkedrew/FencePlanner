@@ -176,12 +176,27 @@ class MapCanvas(QGraphicsView):
         self.minimum_view_scale = QGraphicsView.transform(self).m11()
         self.load_visible_tiles()
 
-    def update_dynamic(self, fences=None, a=None, b=None, gps=None, sync_handles=False):
+    def update_dynamic(self, fences=None, a=None, b=None, gps=None, sync_handles=False, extra_points=None):
         fences = fences or []
+        extra_points = extra_points or {}
         for item in self.dynamic_items:
             if item.scene() is self.scene:
                 self.scene.removeItem(item)
         self.dynamic_items = []
+
+        for first, second in [("A1", "B1"), ("A2", "B2")]:
+            p1 = extra_points.get(first)
+            p2 = extra_points.get(second)
+            if p1 and p2:
+                q1 = self.to_scene_point(p1)
+                q2 = self.to_scene_point(p2)
+                line = QGraphicsLineItem(q1.x(), q1.y(), q2.x(), q2.y())
+                pen = QPen(QColor("#ffb000"), 2)
+                pen.setStyle(Qt.DashLine)
+                line.setPen(pen)
+                line.setZValue(19)
+                self.scene.addItem(line)
+                self.dynamic_items.append(line)
 
         for f in fences:
             q1 = self.to_scene_point(f.start)
@@ -202,6 +217,14 @@ class MapCanvas(QGraphicsView):
 
         self._sync_handle("A", a, "#ff3333", sync_handles)
         self._sync_handle("B", b, "#cc0000", sync_handles)
+        fan_colors = {
+            "A1": "#ff8a00",
+            "B1": "#ffb000",
+            "A2": "#ff8a00",
+            "B2": "#ffb000",
+        }
+        for label, point in extra_points.items():
+            self._sync_handle(label, point, fan_colors.get(label, "#ffb000"), sync_handles)
 
         if gps:
             q = self.to_scene_point(gps)

@@ -2,9 +2,11 @@ from PySide6.QtCore import QThread, Signal, Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import *
 import io
+import os
 import re
 import serial
 import serial.tools.list_ports
+import shutil
 import subprocess
 import sys
 import urllib.request
@@ -20,18 +22,26 @@ from .agopen import (
     load_fence_plan,
     load_field,
     planner_fields_path,
+    planner_root_path,
     plans_dir,
     save_as_new_field,
     save_fence_plan,
 )
 from .cloud_export import export_mobile_cloud
-from .geometry import polygon_area, generate_equal_area_fences, signed_cross_track, stake_points_on_line
+from .geometry import (
+    generate_equal_area_fences,
+    generate_fan_between_guide_lines,
+    polygon_area,
+    signed_cross_track,
+    stake_points_on_line,
+)
 from .kml_transform import KmlLocalTransform
 from .map_canvas import MapCanvas
 from .mobile_export import build_mobile_payload, export_mobile_html
 from .models import Point
 from .nmea import parse_nmea_line
 from .sync_server import FenceSyncServer
+from .sync_cloud import load_sync_settings, mobile_url, reset_sync_settings, save_sync_settings, upload_mobile_cloud
 
 
 class GpsReader(QThread):
@@ -132,12 +142,17 @@ class MainWindow(QMainWindow):
         self.a = None
         self.b = None
         self.await_ab = False
+        self.await_fan = False
+        self.fan_pick_index = 0
+        self.fan_points = {"A1": None, "B1": None, "A2": None, "B2": None}
         self.transform = None
         self.gps_thread = None
         self.gps_local = None
         self.sync_server = None
+        self.qr_server_process = None
         self.mobile_guide_thread = None
         self.mobile_tunnel_process = None
+        self.cloud_sync_settings = load_sync_settings()
         self.setup_ui()
         self.refresh_fields()
 
@@ -145,7 +160,7 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.tabs.addTab(self.build_plan_tab(), "Planlæg")
         self.tabs.addTab(self.build_drive_tab(), "KØR")
-        self.tabs.addTab(self.build_about_tab(), "Om / Android")
+        self.tabs.addTab(self.build_about_tab(), "Program")
         self.setCentralWidget(self.tabs)
 
     def build_plan_tab(self):
@@ -174,11 +189,24 @@ class MainWindow(QMainWindow):
         center.addWidget(self.map)
 
         right = QVBoxLayout()
+        self.zone_mode_combo = QComboBox()
+        self.zone_mode_combo.addItems(["Parallel", "Vifte"])
+        self.zone_mode_combo.currentTextChanged.connect(self.on_zone_mode_changed)
+
         self.zone_count_spin = QSpinBox()
         self.zone_count_spin.setMinimum(2)
         self.zone_count_spin.setMaximum(100)
         self.zone_count_spin.setValue(3)
         self.zone_count_spin.valueChanged.connect(self.regenerate_live)
+
+        self.fan_gap_spin = QDoubleSpinBox()
+        self.fan_gap_spin.setRange(0.0, 200.0)
+        self.fan_gap_spin.setDecimals(1)
+        self.fan_gap_spin.setSingleStep(1.0)
+        self.fan_gap_spin.setValue(10.0)
+        self.fan_gap_spin.setSuffix(" m")
+        self.fan_gap_spin.valueChanged.connect(self.regenerate_live)
+        self.fan_gap_spin.setEnabled(False)
 
         self.stake_spacing_combo = QComboBox()
         self.stake_spacing_combo.setEditable(True)
@@ -197,6 +225,8 @@ class MainWindow(QMainWindow):
 
         btn_ab = QPushButton("Vælg A/B")
         btn_ab.clicked.connect(self.choose_ab)
+        btn_fan = QPushButton("Vifte")
+        btn_fan.clicked.connect(self.choose_fan)
         btn_gen = QPushButton("Generér zoner")
         btn_gen.clicked.connect(self.generate)
         btn_save = QPushButton("Gem som ny mark")
@@ -211,6 +241,10 @@ class MainWindow(QMainWindow):
         self.btn_mobile_guide.clicked.connect(self.start_mobile_guide)
         btn_mobile_cloud = QPushButton("Eksporter mobilsky")
         btn_mobile_cloud.clicked.connect(self.export_mobile_cloud)
+        btn_qr_sync = QPushButton("Upload QR-sync")
+        btn_qr_sync.clicked.connect(self.upload_qr_sync)
+        btn_show_qr_sync = QPushButton("Vis QR-sync")
+        btn_show_qr_sync.clicked.connect(self.show_qr_sync)
         self.btn_sync = QPushButton("Start trådløs sync")
         self.btn_sync.clicked.connect(self.toggle_sync_server)
         self.sync_label = QLabel("Sync: stoppet")
@@ -218,26 +252,34 @@ class MainWindow(QMainWindow):
         self.info = QTextEdit()
         self.info.setReadOnly(True)
 
-        right.addWidget(QLabel("Antal zoner"))
-        right.addWidget(self.zone_count_spin)
-        right.addWidget(QLabel("Pæleafstand"))
-        right.addWidget(self.stake_spacing_combo)
-        right.addWidget(QLabel("Satellitkort"))
-        right.addWidget(self.basemap_combo)
-        right.addWidget(QLabel("Kortkvalitet"))
-        right.addWidget(self.map_quality_combo)
-        right.addWidget(btn_ab)
-        right.addWidget(btn_gen)
-        right.addWidget(btn_save_plan)
-        right.addWidget(btn_load_plan)
-        right.addWidget(btn_drive_field)
-        right.addWidget(btn_save)
-        right.addWidget(self.btn_mobile_guide)
-        right.addWidget(btn_mobile_cloud)
-        right.addWidget(self.btn_sync)
-        right.addWidget(self.sync_label)
+        controls = QWidget()
+        controls_layout = QVBoxLayout(controls)
+        controls_layout.setContentsMargins(0, 0, 0, 0)
+        controls_layout.addWidget(QLabel("Zonetype"))
+        controls_layout.addWidget(self.zone_mode_combo)
+        controls_layout.addWidget(QLabel("Antal zoner"))
+        controls_layout.addWidget(self.zone_count_spin)
+        controls_layout.addWidget(QLabel("Pæleafstand"))
+        controls_layout.addWidget(self.stake_spacing_combo)
+        controls_layout.addWidget(btn_ab)
+        controls_layout.addWidget(btn_fan)
+        controls_layout.addWidget(btn_gen)
+        controls_layout.addWidget(btn_save_plan)
+        controls_layout.addWidget(btn_load_plan)
+        controls_layout.addWidget(btn_drive_field)
+        controls_layout.addWidget(btn_save)
+        controls_layout.addWidget(btn_qr_sync)
+        controls_layout.addWidget(btn_show_qr_sync)
+        controls_layout.addStretch(1)
+
+        controls_scroll = QScrollArea()
+        controls_scroll.setWidgetResizable(True)
+        controls_scroll.setWidget(controls)
+        controls_scroll.setMinimumHeight(170)
+        controls_scroll.setMaximumHeight(320)
+        right.addWidget(controls_scroll, 0)
         right.addWidget(QLabel("Resultat"))
-        right.addWidget(self.info)
+        right.addWidget(self.info, 1)
 
         outer.addLayout(left, 1)
         outer.addLayout(center, 4)
@@ -249,6 +291,10 @@ class MainWindow(QMainWindow):
             self.map.set_basemap(name)
         if hasattr(self, "drive_map"):
             self.drive_map.set_basemap(name)
+
+    def on_zone_mode_changed(self, *_):
+        self.fan_gap_spin.setEnabled(self.zone_mode() == "Vifte")
+        self.regenerate_live()
 
     def change_map_quality(self, quality):
         if hasattr(self, "map"):
@@ -301,12 +347,240 @@ class MainWindow(QMainWindow):
         t = QTextEdit()
         t.setReadOnly(True)
         t.setPlainText(
-            "AgOpenGPS Fence Planner v1.3\n\n"
-            "Satellitkort kan skiftes mellem Esri Clarity og Esri nyeste. "
-            "Clarity kan være klarere, men ikke altid nyest. A/B-punkter kan flyttes direkte på kortet."
+            "AgOpenGPS Fence Planner\n\n"
+            "Programmet bruges til at importere AgOpenGPS/AgShare-marker, planlaegge zoner og hegnslinjer, "
+            "gemme hegnsplaner og bruge dem paa computer eller mobil.\n\n"
+            "Mobilguide kan bruges lokalt med QR-kode. QR-sync er en testfunktion til en lille online sync-server, "
+            "hvor mobilen kan hente marker uden at desktop-programmet er aabent.\n\n"
+            "RTK er ikke noedvendigt for almindelig mobilguide. simpleRTK2B kan bruges via NMEA/COM-port, "
+            "og centimeterpraecision kraever RTK-korrektioner."
         )
+        btn_update = QPushButton("Hent/opdater nyeste version")
+        btn_update.clicked.connect(self.update_program)
+        self.btn_qr_server = QPushButton("Start lokal QR-server")
+        self.btn_qr_server.clicked.connect(self.toggle_qr_server)
+        self.qr_server_label = QLabel("QR-server: stoppet")
+        self.qr_server_label.setWordWrap(True)
+        self.sync_url_input = QLineEdit(self.cloud_sync_settings.get("server_url", "http://127.0.0.1:8787"))
+        btn_save_sync_url = QPushButton("Gem QR-serverlink")
+        btn_save_sync_url.clicked.connect(self.save_sync_server_url)
+        btn_open_data = QPushButton("Aabn datamappe")
+        btn_open_data.clicked.connect(self.open_data_folder)
+        btn_reset = QPushButton("Nulstil lokale Fence Planner-data")
+        btn_reset.clicked.connect(self.reset_local_data)
+        btn_uninstall = QPushButton("Afinstaller program")
+        btn_uninstall.clicked.connect(self.uninstall_program)
         layout.addWidget(t)
+        layout.addWidget(btn_update)
+        layout.addWidget(self.btn_qr_server)
+        layout.addWidget(self.qr_server_label)
+        layout.addWidget(QLabel("QR-sync server URL"))
+        layout.addWidget(self.sync_url_input)
+        layout.addWidget(btn_save_sync_url)
+        layout.addWidget(btn_open_data)
+        layout.addWidget(btn_reset)
+        layout.addWidget(btn_uninstall)
         return w
+
+    def update_program(self):
+        reply = QMessageBox.question(
+            self,
+            "Opdatering",
+            "Programmet henter nu nyeste version og installerer den automatisk.\n\n"
+            "Fence Planner lukker under opdateringen og skrivebordsikonet bliver opdateret.\n\n"
+            "Vil du starte opdateringen?",
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        script = self.write_auto_update_script()
+        subprocess.Popen(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(script),
+            ],
+            creationflags=subprocess.CREATE_NEW_CONSOLE if hasattr(subprocess, "CREATE_NEW_CONSOLE") else 0,
+        )
+        QApplication.quit()
+
+    def write_auto_update_script(self):
+        work = Path(os.environ.get("TEMP", str(Path.home()))) / "FencePlannerAutoUpdate"
+        work.mkdir(parents=True, exist_ok=True)
+        script = work / "update_latest.ps1"
+        script.write_text(
+            r'''
+$ErrorActionPreference = "Stop"
+$PackageUrl = "https://github.com/bjarkedrew/FencePlanner/releases/latest/download/AgOpenGPS_FencePlanner_package.zip"
+$AppName = "AgOpenGPS Fence Planner"
+$work = Join-Path $env:TEMP ("FencePlannerUpdate_" + [guid]::NewGuid().ToString("N"))
+$zip = Join-Path $work "package.zip"
+$extract = Join-Path $work "package"
+
+function Step($Text) {
+    Write-Host ""
+    Write-Host "== $Text =="
+}
+
+New-Item -ItemType Directory -Force -Path $work | Out-Null
+try {
+    Step "Henter nyeste Fence Planner"
+    Invoke-WebRequest -Uri $PackageUrl -OutFile $zip
+
+    Step "Pakker opdatering ud"
+    Expand-Archive -Path $zip -DestinationPath $extract -Force
+
+    $installScript = Get-ChildItem -Path $extract -Recurse -Filter install_release.ps1 | Select-Object -First 1
+    if (-not $installScript) {
+        throw "install_release.ps1 blev ikke fundet i pakken."
+    }
+
+    Step "Installerer opdatering"
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installScript.FullName
+    if ($LASTEXITCODE -ne 0) {
+        throw "Installationen fejlede med exitkode $LASTEXITCODE."
+    }
+
+    Step "Faerdig"
+    Write-Host "$AppName er opdateret."
+    Write-Host "Du kan starte programmet fra skrivebordet."
+}
+catch {
+    Write-Host ""
+    Write-Host "Opdatering fejlede:"
+    Write-Host $_
+    pause
+}
+finally {
+    Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
+}
+'''.lstrip(),
+            encoding="utf-8",
+        )
+        return script
+
+    def open_data_folder(self):
+        root = planner_root_path()
+        root.mkdir(parents=True, exist_ok=True)
+        webbrowser.open(str(root))
+
+    def save_sync_server_url(self):
+        url = self.sync_url_input.text().strip().rstrip("/")
+        if not (url.startswith("http://") or url.startswith("https://")):
+            QMessageBox.warning(self, "Serverlink", "Serverlink skal starte med http:// eller https://.")
+            return
+        self.cloud_sync_settings["server_url"] = url
+        save_sync_settings(self.cloud_sync_settings)
+        QMessageBox.information(self, "Serverlink gemt", f"QR-sync bruger nu:\n{url}")
+
+    def toggle_qr_server(self):
+        if self.qr_server_process and self.qr_server_process.poll() is None:
+            self.qr_server_process.terminate()
+            self.qr_server_process = None
+            self.btn_qr_server.setText("Start lokal QR-server")
+            self.qr_server_label.setText("QR-server: stoppet")
+            return
+
+        try:
+            node = self.find_qr_server_node()
+            server_js = self.find_qr_server_script()
+            data_dir = planner_root_path() / "SyncServer"
+            data_dir.mkdir(parents=True, exist_ok=True)
+            env = dict(**os.environ)
+            env["PORT"] = "8787"
+            env["FENCE_SYNC_DATA"] = str(data_dir)
+            flags = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+            self.qr_server_process = subprocess.Popen(
+                [str(node), str(server_js)],
+                cwd=str(server_js.parent.parent),
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=flags,
+            )
+            self.btn_qr_server.setText("Stop lokal QR-server")
+            self.qr_server_label.setText("QR-server: http://127.0.0.1:8787")
+        except Exception as e:
+            QMessageBox.critical(self, "QR-server fejl", str(e))
+
+    def ensure_local_qr_server(self):
+        server_url = self.cloud_sync_settings.get("server_url", "")
+        if not (server_url.startswith("http://127.0.0.1") or server_url.startswith("http://localhost")):
+            return
+        if self.qr_server_process and self.qr_server_process.poll() is None:
+            return
+        self.toggle_qr_server()
+        for _ in range(20):
+            try:
+                with urllib.request.urlopen(server_url.rstrip("/") + "/", timeout=0.5) as response:
+                    if response.status == 200:
+                        return
+            except Exception:
+                QApplication.processEvents()
+                QThread.msleep(150)
+
+    def find_qr_server_node(self):
+        roots = [
+            Path(sys.executable).resolve().parent,
+            Path(__file__).resolve().parents[1],
+        ]
+        for root in roots:
+            node = root / ".tools" / "node-v22.22.3-win-x64" / "node.exe"
+            if node.exists():
+                return node
+        return "node"
+
+    def find_qr_server_script(self):
+        roots = [
+            Path(sys.executable).resolve().parent,
+            Path(__file__).resolve().parents[1],
+        ]
+        for root in roots:
+            script = root / "sync_server" / "server.js"
+            if script.exists():
+                return script
+        raise FileNotFoundError("Kunne ikke finde sync_server\\server.js.")
+
+    def reset_local_data(self):
+        reply = QMessageBox.question(
+            self,
+            "Nulstil lokale data",
+            "Dette sletter importerede Fence Planner-marker, lokale imports, mobilsky og QR-sync settings.\n\n"
+            "AgOpenGPS Fields-mappen slettes ikke.\n\n"
+            "Vil du fortsætte?",
+        )
+        if reply != QMessageBox.Yes:
+            return
+        root = planner_root_path()
+        for name in ["Fields", "Imports", "MobileCloud"]:
+            target = root / name
+            if target.exists():
+                shutil.rmtree(target)
+        settings = root / "sync_settings.json"
+        if settings.exists():
+            settings.unlink()
+        self.cloud_sync_settings = load_sync_settings()
+        self.refresh_fields()
+        QMessageBox.information(self, "Nulstillet", "Lokale Fence Planner-data er nulstillet.")
+
+    def uninstall_program(self):
+        reply = QMessageBox.question(
+            self,
+            "Afinstaller",
+            "Vil du aabne afinstallationsscriptet?\n\nProgrammet skal lukkes efter afinstallation.",
+        )
+        if reply != QMessageBox.Yes:
+            return
+        script = Path(__file__).resolve().parents[1] / "installer" / "uninstall.ps1"
+        if not script.exists():
+            script = Path.home() / "Documents" / "FencePlanner" / "installer" / "uninstall.ps1"
+        if script.exists():
+            subprocess.Popen(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)])
+        else:
+            QMessageBox.warning(self, "Mangler script", "Kunne ikke finde installer\\uninstall.ps1.")
 
     def refresh_fields(self):
         self.path_label.setText(str(self.fields_path))
@@ -349,6 +623,7 @@ class MainWindow(QMainWindow):
         try:
             self.field = load_field(self.fields_path / self.field_list.item(row).text())
             self.a = self.b = None
+            self.clear_fan_points()
             self.fences = []
             self.fold_areas = []
             self.transform = KmlLocalTransform(self.field.boundary, self.field.field_kml_ring) if self.field.field_kml_ring else None
@@ -361,8 +636,7 @@ class MainWindow(QMainWindow):
                 f"Mark: {self.field.name}\n"
                 f"Areal: {ha:.2f} ha\n"
                 f"Georeference: {georef_source}\n"
-                f"{map_status}\n"
-                f"Kort: {self.basemap_combo.currentText()} / {self.map_quality_combo.currentText()}"
+                f"{map_status}"
             )
             self.refresh_fence_combo()
             self.update_drive_line_info()
@@ -374,14 +648,51 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Ingen mark", "Vælg mark først.")
             return
         self.await_ab = True
+        self.await_fan = False
         self.a = self.b = None
+        self.clear_fan_points()
         self.fences = []
         self.fold_areas = []
         self.map.draw(self.field.boundary, self.fences, self.a, self.b)
         self.drive_map.draw(self.field.boundary, self.fences, self.a, self.b, self.gps_local)
         self.info.setPlainText("Klik A og derefter B på kortet. Derefter kan punkterne trækkes rundt.")
 
+    def clear_fan_points(self):
+        self.fan_points = {"A1": None, "B1": None, "A2": None, "B2": None}
+        self.fan_pick_index = 0
+
+    def choose_fan(self):
+        if not self.field:
+            QMessageBox.warning(self, "Ingen mark", "Vaelg mark foerst.")
+            return
+        self.zone_mode_combo.setCurrentText("Vifte")
+        self.await_ab = False
+        self.await_fan = True
+        self.a = self.b = None
+        self.clear_fan_points()
+        self.fences = []
+        self.fold_areas = []
+        self.map.draw(self.field.boundary, self.fences, None, None)
+        self.drive_map.draw(self.field.boundary, self.fences, None, None, self.gps_local)
+        self.info.setPlainText(
+            "Vifte: klik A1 og B1 for foerste yderlinje.\n"
+            "Klik derefter A2 og B2 for anden yderlinje."
+        )
+
     def map_clicked(self, x, y):
+        if self.await_fan:
+            labels = ["A1", "B1", "A2", "B2"]
+            label = labels[self.fan_pick_index]
+            self.fan_points[label] = Point(x, y)
+            self.fan_pick_index += 1
+            self.map.draw(self.field.boundary, self.fences, None, None)
+            self.map.update_dynamic(self.fences, None, None, extra_points=self.fan_points, sync_handles=True)
+            if self.fan_pick_index < len(labels):
+                self.info.setPlainText(f"{label} valgt. Klik {labels[self.fan_pick_index]}.")
+            else:
+                self.await_fan = False
+                self.generate(silent=True)
+            return
         if not self.await_ab:
             return
         if self.a is None:
@@ -400,10 +711,14 @@ class MainWindow(QMainWindow):
             self.a = Point(x, y)
         elif label == "B":
             self.b = Point(x, y)
+        elif label in self.fan_points:
+            self.fan_points[label] = Point(x, y)
         self.generate(silent=True)
 
     def regenerate_live(self, *_):
-        if self.field and self.a and self.b:
+        if self.field and self.zone_mode() == "Vifte" and self.has_fan_points():
+            self.generate(silent=True)
+        elif self.field and self.a and self.b:
             self.generate(silent=True)
 
     def stake_spacing(self):
@@ -432,16 +747,41 @@ class MainWindow(QMainWindow):
     def fence_count(self):
         return self.zone_count() - 1
 
+    def zone_mode(self):
+        return self.zone_mode_combo.currentText() if hasattr(self, "zone_mode_combo") else "Parallel"
+
+    def fan_gap(self):
+        return self.fan_gap_spin.value() if hasattr(self, "fan_gap_spin") else 0.0
+
+    def has_fan_points(self):
+        return all(self.fan_points.get(label) for label in ["A1", "B1", "A2", "B2"])
+
     def generate(self, silent=False):
-        if not self.field or not self.a or not self.b:
+        if self.zone_mode() == "Vifte":
+            missing = not self.field or not self.has_fan_points()
+        else:
+            missing = not self.field or not self.a or not self.b
+        if missing:
             if not silent:
-                QMessageBox.warning(self, "Mangler data", "Vælg mark og A/B først.")
+                QMessageBox.warning(self, "Mangler data", "Vaelg mark og punkter foerst.")
             return
         try:
             selected_fence = self.fence_combo.currentText() if self.fence_combo.count() else ""
-            self.fences, self.fold_areas = generate_equal_area_fences(self.field.boundary, self.a, self.b, self.zone_count())
-            self.map.update_dynamic(self.fences, self.a, self.b, sync_handles=False)
-            self.drive_map.update_dynamic(self.fences, self.a, self.b, self.gps_local, sync_handles=True)
+            if self.zone_mode() == "Vifte":
+                self.fences, self.fold_areas = generate_fan_between_guide_lines(
+                    self.field.boundary,
+                    self.fan_points["A1"],
+                    self.fan_points["B1"],
+                    self.fan_points["A2"],
+                    self.fan_points["B2"],
+                    self.zone_count(),
+                )
+                self.map.update_dynamic(self.fences, None, None, sync_handles=False, extra_points=self.fan_points)
+                self.drive_map.update_dynamic(self.fences, None, None, self.gps_local, sync_handles=True, extra_points=self.fan_points)
+            else:
+                self.fences, self.fold_areas = generate_equal_area_fences(self.field.boundary, self.a, self.b, self.zone_count())
+                self.map.update_dynamic(self.fences, self.a, self.b, sync_handles=False)
+                self.drive_map.update_dynamic(self.fences, self.a, self.b, self.gps_local, sync_handles=True)
             self.refresh_fence_combo(selected_fence)
             self.update_result_text()
         except Exception as e:
@@ -469,7 +809,11 @@ class MainWindow(QMainWindow):
         if not self.fences:
             QMessageBox.warning(self, "Ingen hegnslinjer", "Generer zoner eller indlaes en hegnsplan foerst.")
             return
-        self.drive_map.draw(self.field.boundary, self.fences, self.a, self.b, self.gps_local)
+        if self.zone_mode() == "Vifte":
+            self.drive_map.draw(self.field.boundary, self.fences, None, None, self.gps_local)
+            self.drive_map.update_dynamic(self.fences, None, None, self.gps_local, extra_points=self.fan_points, sync_handles=True)
+        else:
+            self.drive_map.draw(self.field.boundary, self.fences, self.a, self.b, self.gps_local)
         self.update_drive_line_info()
         self.tabs.setCurrentIndex(1)
 
@@ -513,12 +857,19 @@ class MainWindow(QMainWindow):
         total = polygon_area(self.field.boundary) / 10000
         lines = [
             f"Total: {total:.2f} ha",
+            f"Zonetype: {self.zone_mode()}",
             f"Zoner: {self.zone_count()}",
             f"Hegn: {self.fence_count()}",
             f"Pæleafstand: {self.stake_spacing_label()}",
-            f"Kort: {self.basemap_combo.currentText()} / {self.map_quality_combo.currentText()}",
             "",
         ]
+        if self.zone_mode() == "Vifte":
+            a1 = self.fan_points.get("A1")
+            a2 = self.fan_points.get("A2")
+            if a1 and a2:
+                opening = ((a2.x - a1.x) ** 2 + (a2.y - a1.y) ** 2) ** 0.5
+                lines.insert(4, f"Vifteåbning A1-A2: {opening:.1f} m")
+            lines.insert(5, f"Vifteareal: {sum(self.fold_areas) / 10000:.2f} ha")
         for i, area in enumerate(self.fold_areas, 1):
             lines.append(f"Fold {i}: {area / 10000:.2f} ha")
 
@@ -571,7 +922,10 @@ class MainWindow(QMainWindow):
                 self.stake_spacing(),
                 self.a,
                 self.b,
-                path,
+                destination=path,
+                zone_mode=self.zone_mode(),
+                fan_gap_m=self.fan_gap(),
+                fan_points=self.fan_points if self.zone_mode() == "Vifte" else None,
             )
             QMessageBox.information(self, "Hegnsplan gemt", f"Hegnsplan gemt:\n{dst}")
         except Exception as e:
@@ -593,18 +947,34 @@ class MainWindow(QMainWindow):
             plan = load_fence_plan(path)
             self.zone_count_spin.blockSignals(True)
             self.stake_spacing_combo.blockSignals(True)
+            self.zone_mode_combo.blockSignals(True)
+            self.fan_gap_spin.blockSignals(True)
             self.zone_count_spin.setValue(max(2, plan["zone_count"]))
             self.stake_spacing_combo.setCurrentText(self.spacing_text(plan["stake_spacing_m"]))
+            self.zone_mode_combo.setCurrentText(plan.get("zone_mode", "Parallel"))
+            self.fan_gap_spin.setValue(float(plan.get("fan_gap_m", 0.0)))
             self.zone_count_spin.blockSignals(False)
             self.stake_spacing_combo.blockSignals(False)
+            self.zone_mode_combo.blockSignals(False)
+            self.fan_gap_spin.blockSignals(False)
+            self.fan_gap_spin.setEnabled(self.zone_mode() == "Vifte")
             self.a = plan["a"]
             self.b = plan["b"]
+            self.fan_points = {"A1": None, "B1": None, "A2": None, "B2": None}
+            self.fan_points.update(plan.get("fan_points", {}))
             self.fences = plan["fences"]
             self.fold_areas = plan["fold_areas"]
             self.await_ab = False
+            self.await_fan = False
             self.refresh_fence_combo()
-            self.map.draw(self.field.boundary, self.fences, self.a, self.b)
-            self.drive_map.draw(self.field.boundary, self.fences, self.a, self.b, self.gps_local)
+            if self.zone_mode() == "Vifte":
+                self.map.draw(self.field.boundary, self.fences, None, None)
+                self.map.update_dynamic(self.fences, None, None, extra_points=self.fan_points, sync_handles=True)
+                self.drive_map.draw(self.field.boundary, self.fences, None, None, self.gps_local)
+                self.drive_map.update_dynamic(self.fences, None, None, self.gps_local, extra_points=self.fan_points, sync_handles=True)
+            else:
+                self.map.draw(self.field.boundary, self.fences, self.a, self.b)
+                self.drive_map.draw(self.field.boundary, self.fences, self.a, self.b, self.gps_local)
             self.update_result_text()
             QMessageBox.information(self, "Hegnsplan indlaest", f"Hegnsplan indlaest:\n{plan['path']}")
         except Exception as e:
@@ -639,6 +1009,8 @@ class MainWindow(QMainWindow):
                 self.stake_spacing(),
                 self.a,
                 self.b,
+                self.zone_mode(),
+                self.fan_gap(),
             )
             QMessageBox.information(self, "Mobilside gemt", f"Mobilside gemt:\n{dst}\n\nSend HTML-filen til telefonen og åbn den i Chrome.")
         except Exception as e:
@@ -658,6 +1030,8 @@ class MainWindow(QMainWindow):
             self.stake_spacing(),
             self.a,
             self.b,
+            self.zone_mode(),
+            self.fan_gap(),
         )
 
     def export_mobile_cloud(self):
@@ -674,6 +1048,74 @@ class MainWindow(QMainWindow):
             )
         except Exception as e:
             QMessageBox.critical(self, "Mobilsky fejl", str(e))
+
+    def upload_qr_sync(self):
+        try:
+            self.ensure_local_qr_server()
+            url, count = upload_mobile_cloud(self.cloud_sync_settings)
+            QApplication.clipboard().setText(url)
+            self.show_qr_dialog(url, f"{count} hegnsplaner uploadet til QR-sync.\nLinket er kopieret til udklipsholderen.")
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "QR-sync fejl",
+                "Kunne ikke uploade til sync-serveren.\n\n"
+                "Til lokal test skal serveren koere paa computeren:\n"
+                "node sync_server\\server.js\n\n"
+                f"Fejl:\n{e}",
+            )
+
+    def show_qr_sync(self):
+        url = mobile_url(self.cloud_sync_settings)
+        QApplication.clipboard().setText(url)
+        self.show_qr_dialog(url, "QR-link til mobilside. Upload QR-sync foerst, hvis data ikke er opdateret.")
+
+    def reset_qr_sync(self):
+        reply = QMessageBox.question(
+            self,
+            "Nulstil QR-sync",
+            "Vil du lave en ny QR-sync kode?\n\nDen gamle mobilside vil ikke laengere faa nye uploads.",
+        )
+        if reply != QMessageBox.Yes:
+            return
+        self.cloud_sync_settings = reset_sync_settings(self.cloud_sync_settings.get("server_url", None) or "http://127.0.0.1:8787")
+        self.show_qr_sync()
+
+    def show_qr_dialog(self, url, message):
+        qr_image = qrcode.make(url)
+        buffer = io.BytesIO()
+        qr_image.save(buffer, format="PNG")
+        pixmap = QPixmap()
+        pixmap.loadFromData(buffer.getvalue(), "PNG")
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Fence Planner QR-sync")
+        layout = QVBoxLayout(dialog)
+        title = QLabel("Scan med mobilen")
+        title.setStyleSheet("font-size: 16px; font-weight: 700;")
+        title.setAlignment(Qt.AlignCenter)
+        qr = QLabel()
+        qr.setPixmap(pixmap.scaled(320, 320, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        qr.setAlignment(Qt.AlignCenter)
+        text = QLabel(message)
+        text.setWordWrap(True)
+        text.setAlignment(Qt.AlignCenter)
+        link = QLineEdit(url)
+        link.setReadOnly(True)
+        link.selectAll()
+        btn_reset = QPushButton("Nulstil QR-sync")
+        btn_reset.clicked.connect(lambda: (dialog.accept(), self.reset_qr_sync()))
+        btn_close = QPushButton("Luk")
+        btn_close.clicked.connect(dialog.accept)
+
+        layout.addWidget(title)
+        layout.addWidget(qr)
+        layout.addWidget(text)
+        layout.addWidget(link)
+        layout.addWidget(btn_reset)
+        layout.addWidget(btn_close)
+        dialog.resize(390, 540)
+        dialog.exec()
 
     def toggle_sync_server(self):
         if self.sync_server:
@@ -916,6 +1358,9 @@ class MainWindow(QMainWindow):
         if self.sync_server:
             self.sync_server.stop()
             self.sync_server = None
+        if self.qr_server_process and self.qr_server_process.poll() is None:
+            self.qr_server_process.terminate()
+            self.qr_server_process = None
         self.stop_gps()
         event.accept()
 
@@ -940,7 +1385,3 @@ class MainWindow(QMainWindow):
             lines.append(f"Afstand til linje: {abs(xt):.2f} m {side}")
             self.drive_map.update_dynamic(self.fences, self.a, self.b, self.gps_local, sync_handles=True)
         self.drive_info.setPlainText("\n".join(lines))
-
-    def closeEvent(self, event):
-        self.stop_gps()
-        super().closeEvent(event)

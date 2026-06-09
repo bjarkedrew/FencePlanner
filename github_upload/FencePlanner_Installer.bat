@@ -1,7 +1,7 @@
 <# :
 @echo off
 setlocal
-title AgOpenGPS Fence Planner Online Installer
+title FencePlanner Installer
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Expression ([System.IO.File]::ReadAllText('%~f0'))"
 if errorlevel 1 (
     echo.
@@ -10,7 +10,7 @@ if errorlevel 1 (
     exit /b 1
 )
 echo.
-echo Faerdig. AgOpenGPS Fence Planner er installeret.
+echo Faerdig. FencePlanner er installeret.
 pause
 exit /b 0
 #>

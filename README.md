@@ -1,177 +1,155 @@
-# FencePlanner
-a planning tool for fences.
-**AgOpenGPS Fence Planner**
+# AgOpenGPS Fence Planner
 
-AgOpenGPS Fence Planner er et Windows-program til at planlægge midlertidige hegn, folde og zoner direkte ud fra dine AgOpenGPS-markfiler.
+AgOpenGPS Fence Planner er et Windows-program til at planlaegge midlertidige hegn, folde og zoner ud fra AgOpenGPS- og AgShare-markfiler.
 
-Programmet læser automatisk dine marker fra:
+Programmet er lavet til praktisk markarbejde: lav planen paa computeren med satellitkort og markfiler, gem hegnslinjerne, og brug derefter KOR-fanen eller mobilen som guide ude i marken.
+
+## Kort Fortalt
+
+- Finder automatisk `Documents\AgOpenGPS\Fields`
+- Importerer AgShare/TASKDATA ZIP-filer
+- Viser marker paa satellitkort, naar der findes georeference
+- Deler marker op i lige store zoner/folde
+- Kan lave parallelle hegn eller vifte-hegn mellem to yderlinjer
+- Viser paelepunkter og samlet antal paele
+- Gemmer hegnsplaner, saa de kan indlaeses igen senere
+- Skriver `TrackLines.txt`, saa linjer kan bruges i AgOpenGPS
+- Har KOR-fane til GPS/simpleRTK2B via NMEA/COM-port
+- Kan sende flere gemte planer til mobil via QR-sync
+- Har automatisk opdateringsknap under fanen `Program`
+
+## Markfiler
+
+Programmet kigger som standard efter AgOpenGPS-marker her:
 
 ```text
 Documents\AgOpenGPS\Fields
 ```
 
-Det bruger markens `Boundary.txt` og `Field.kml` til at vise marken korrekt på satellitkort og til at lave GPS-baseret mobilguide.
-
-**Hvad Programmet Kan**
-
-- Vise alle AgOpenGPS-marker
-- Læse markgrænser fra `Boundary.txt`
-- Læse georeference fra `Field.kml`
-- Vise marken på satellitkort
-- Oprette flytbare A/B-punkter
-- Opdele marken i zoner/folde
-- Lave lige store hektar pr. zone
-- Beregne hegnslinjer mellem zonerne
-- Vise pælepunkter med valgfri afstand
-- Gemme planen som en ny AgOpenGPS-mark
-- Skrive hegnslinjer til `TrackLines.txt`
-- Vise GPS-position i KØR-fanen med simpleRTK2B
-- Vise afstand til valgt hegnslinje
-- Starte mobilguide med QR-kode
-
-**Sådan Virker Det**
-
-1. Åbn programmet.
-2. Vælg en mark fra listen.
-3. Vælg antal zoner.
-4. Vælg pæleafstand, fx `10 m`, `25 m`, `50 m` eller skriv selv en afstand.
-5. Tryk `Vælg A/B`.
-6. Klik A-punkt og B-punkt på kortet.
-7. Flyt A/B-punkterne rundt, indtil hegnene ligger rigtigt.
-8. Programmet opdaterer zoner, arealer, hegn og pæle live.
-9. Tryk `Gem som ny mark`, hvis planen skal bruges i AgOpenGPS.
-10. Tryk `Start mobilguide`, hvis du vil bruge telefonen som GPS-guide ude i marken.
-
-**Mobilguide**
-
-Mobilguiden åbnes via QR-kode.
-
-Når du trykker `Start mobilguide`, gør programmet automatisk dette:
-
-- starter en lokal webguide
-- laver et sikkert HTTPS-link
-- kopierer linket
-- viser QR-kode
-- sender mark, hegn og pæle til mobilen
-- lader telefonens GPS vise afstand til valgt hegnslinje
-
-På mobilen scanner du QR-koden, åbner siden og trykker `GPS`.
-
-**Typisk Brug**
-
-Programmet er lavet til dig, der vil:
-
-- dele en mark op i lige store folde
-- planlægge elhegn
-- finde hvor hegnslinjerne skal gå
-- se hvor mange pæle der skal bruges
-- bruge mobilen som guide ude i marken
-- gemme planen tilbage til AgOpenGPS som en ny mark
-
-Det er især tænkt til praktisk markarbejde, hvor planen laves på computeren, og udførelsen sker ude i marken med telefonens GPS.
-
-**Step By Step: Download Og Opsætning Fra GitHub**
-
-1. Gå ind på GitHub-siden for programmet.
-
-2. Klik på `Releases` i højre side.
-
-3. Åbn den nyeste release.
-
-4. Download denne fil:
+Importerede AgShare/TASKDATA-marker gemmes separat her:
 
 ```text
-FencePlanner_Online_Installer.bat
+Documents\FencePlanner\Fields
 ```
 
-Den henter selv resten af programmet fra nyeste release.
+Fence Planner kan bruge georeference fra:
 
-5. Læg filen i `Downloads`.
+- `Field.kml`
+- `zISOXML\v3/v4\TASKDATA.XML`
+- AgShare `geojson/fields.geojson`
 
-6. Højreklik på:
+Det betyder, at satellitkort og mobil GPS stadig kan bruges, selv om en downloadet mark ikke har `Field.kml`, hvis AgShare/TASKDATA indeholder geodata.
+
+## Saadan Bruger Man Det
+
+1. Aabn `AgOpenGPS Fence Planner`.
+2. Vaelg en mark fra listen, eller importer en AgShare/TASKDATA ZIP.
+3. Vaelg antal zoner og paeleafstand.
+4. Vaelg almindelig parallel plan med `Vaelg A/B`, eller tryk `Vifte`.
+5. Flyt punkterne paa kortet, indtil hegnene ligger rigtigt.
+6. Tryk `Gem hegnsplan`, hvis planen skal gemmes til senere.
+7. Tryk `Koer mark` for at gaa direkte til KOR-fanen.
+8. Tryk `Upload QR-sync`, hvis planen skal bruges paa mobil.
+
+## Parallelle Zoner
+
+Tryk `Vaelg A/B` og klik to punkter paa kortet.
+
+A/B-linjen bestemmer retningen, og programmet laver de noedvendige hegnslinjer, saa zonerne bliver lige store i hektar.
+
+Eksempel:
+
+- 3 zoner giver 2 hegn
+- 5 zoner giver 4 hegn
+
+## Vifte-Zoner
+
+Tryk `Vifte` og klik fire punkter:
 
 ```text
-FencePlanner_Online_Installer.bat
+A1 -> B1 -> A2 -> B2
 ```
 
-7. Vælg:
+`A1-B1` og `A2-B2` er de to yderlinjer. Programmet fordeler hegnslinjerne mellem dem efter det valgte antal zoner.
+
+Afstanden mellem `A1` og `A2` bliver aabningen i viften, saa hegnene ikke behøver at ende i en helt skarp spids.
+
+## Paele
+
+Paeleafstand kan vaelges som:
+
+- `10 m`
+- `25 m`
+- `50 m`
+- eller en selvvalgt afstand skrevet direkte i feltet
+
+Programmet viser antal paele pr. hegnslinje og samlet antal paele.
+
+## KOR-Fanen
+
+KOR-fanen bruges som guide ved opmaerkning.
+
+Den kan:
+
+- vise valgt hegnslinje
+- skifte mellem hegnslinjer
+- vise linjelaengde og paele
+- laese GPS fra NMEA/COM-port
+- vise afstand til valgt hegnslinje
+
+simpleRTK2B kan bruges, hvis den sender NMEA via COM-port. Centimeterpraecision kraever normalt RTK-korrektioner.
+
+## Mobil Og QR-Sync
+
+QR-sync kan sende gemte hegnsplaner til en mobilside.
+
+Arbejdsgang:
+
+1. Gem en eller flere hegnsplaner.
+2. Tryk `Upload QR-sync`.
+3. Scan QR-koden paa mobilen.
+4. Vaelg mark/hegnslinje paa mobilen.
+5. Brug mobilens GPS som guide.
+
+Ved lokal test starter programmet selv den lokale QR-server, hvis serverlinket er `127.0.0.1` eller `localhost`.
+
+For rigtig mobilbrug uden at desktop-programmet er aabent skal sync-serveren hostes online med HTTPS. QR-koden er kun et laeselink; desktop-programmet beholder upload-noeglen lokalt.
+
+## Installation
+
+Fra GitHub Release skal man normalt kun downloade:
 
 ```text
-Kør som administrator
+FencePlanner_Installer.bat
 ```
 
-8. Windows kan advare om ukendt program. Tryk:
+Koer filen. Den henter selv nyeste programpakke og installerer programmet.
 
-```text
-Flere oplysninger
-Kør alligevel
-```
-
-9. Installeren downloader programpakken og installerer Fence Planner.
-
-10. Når installationen er færdig, ligger programmet på skrivebordet som:
+Efter installation ligger programmet paa skrivebordet som:
 
 ```text
 AgOpenGPS Fence Planner
 ```
 
-11. Dobbeltklik på ikonet for at åbne programmet.
+Windows kan advare om ukendt program. Vaelg i saa fald `Flere oplysninger` og derefter `Koer alligevel`.
 
-**Første Gang I Programmet**
+## Opdatering
 
-1. Programmet forsøger automatisk at finde:
-
-```text
-Documents\AgOpenGPS\Fields
-```
-
-2. Hvis dine marker ikke vises, tryk:
+Under fanen `Program` findes knappen:
 
 ```text
-Vælg Fields-mappe
+Hent/opdater nyeste version
 ```
 
-3. Vælg din AgOpenGPS `Fields`-mappe.
+Den henter nyeste GitHub Release, lukker programmet under installationen og opdaterer skrivebordsikonet automatisk.
 
-4. Vælg en mark i listen.
+## Offline/Lokal Installation
 
-5. Vælg antal zoner.
-
-6. Vælg pæleafstand.
-
-7. Tryk:
-
-```text
-Vælg A/B
-```
-
-8. Klik A og B på kortet.
-
-9. Flyt A/B-punkterne indtil hegnene ligger rigtigt.
-
-10. Tryk:
-
-```text
-Start mobilguide
-```
-
-11. Scan QR-koden med mobilen.
-
-12. Tryk `GPS` på mobilen og tillad placering.
-
-**Hvis Setup Ikke Virker**
-
-Download i stedet:
+Hvis den lille installer ikke virker, kan man hente:
 
 ```text
 AgOpenGPS_FencePlanner_package.zip
 Installer_fra_lokal_pakke.bat
 ```
 
-Læg dem i samme mappe og kør:
-
-```text
-Installer_fra_lokal_pakke.bat
-```
-
-Så installeres programmet fra den downloadede zip-fil.
+Laeg dem i samme mappe og koer `Installer_fra_lokal_pakke.bat`.

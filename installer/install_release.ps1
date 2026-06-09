@@ -27,6 +27,9 @@ $appName = "AgOpenGPS Fence Planner"
 $exeName = "$appName.exe"
 $sourceExe = Join-Path $packageDir $exeName
 $sourceTools = Join-Path $packageDir ".tools"
+$sourceSyncServer = Join-Path $packageDir "sync_server"
+$sourceQrServerBat = Join-Path $packageDir "start_qr_sync_server.bat"
+$sourceInstaller = Join-Path $packageDir "installer"
 $installDir = Join-Path $env:LOCALAPPDATA "Programs\$appName"
 $installedExe = Join-Path $installDir $exeName
 
@@ -55,6 +58,26 @@ if (Test-Path $sourceTools) {
         Remove-Item -LiteralPath $targetTools -Recurse -Force
     }
     Copy-Item -Recurse -Force $sourceTools $targetTools
+}
+
+if (Test-Path $sourceSyncServer) {
+    $targetSyncServer = Join-Path $installDir "sync_server"
+    if (Test-Path $targetSyncServer) {
+        Remove-Item -LiteralPath $targetSyncServer -Recurse -Force
+    }
+    Copy-Item -Recurse -Force $sourceSyncServer $targetSyncServer
+}
+
+if (Test-Path $sourceQrServerBat) {
+    Copy-Item -Force $sourceQrServerBat (Join-Path $installDir "start_qr_sync_server.bat")
+}
+
+if (Test-Path $sourceInstaller) {
+    $targetInstaller = Join-Path $installDir "installer"
+    if (Test-Path $targetInstaller) {
+        Remove-Item -LiteralPath $targetInstaller -Recurse -Force
+    }
+    Copy-Item -Recurse -Force $sourceInstaller $targetInstaller
 }
 
 $desktopShortcut = Join-Path ([Environment]::GetFolderPath("Desktop")) "$appName.lnk"

@@ -1,4 +1,4 @@
-# AgOpenGPS Fence Planner v1.0.6
+# AgOpenGPS Fence Planner test
 
 Windows-program til planlægning af hegn, zoner og pælepunkter ud fra AgOpenGPS-markfiler.
 
@@ -23,6 +23,13 @@ Windows-program til planlægning af hegn, zoner og pælepunkter ud fra AgOpenGPS
 - Mobilguide med HTTPS-link og QR-kode
 - Telefonens GPS kan bruges som markør ude i marken
 - Mobilsky-eksport kan samle flere gemte hegnsplaner til en mobilside
+- QR-sync testserver med QR-parring uden bruger-login
+- QR-sync starter lokal testserver automatisk ved lokal upload, hvis den ikke koerer
+- Ny `Vifte`-knap med fire punkter: A1/B1 og A2/B2 som yderlinjer
+- Vifte fordeler hegnslinjer mellem de to yderlinjer; A1-A2 bestemmer aabningen
+- Satellitkort-indstillinger er fjernet fra hovedsiden, saa datafeltet faar mere plads
+- Knapper/indstillinger i planlaegning ligger nu i et scrollfelt
+- Opdateringsknappen henter og installerer nyeste release automatisk
 - `Koer mark` skifter direkte til KØR-fanen med valgt mark og hegnslinjer
 - KØR-fanen viser linjelængde, pæle og GPS-koordinater for valgt hegnslinje
 
@@ -30,7 +37,7 @@ Windows-program til planlægning af hegn, zoner og pælepunkter ud fra AgOpenGPS
 
 For almindelig installation:
 
-1. Download `FencePlanner_Online_Installer.bat`
+1. Download `FencePlanner_Installer.bat`
 2. Kør filen
 3. Installeren henter selv resten af programmet fra nyeste GitHub release
 
@@ -44,13 +51,11 @@ Læg dem i samme mappe og kør `Installer_fra_lokal_pakke.bat`.
 ## Release assets
 
 - `AgOpenGPS_FencePlanner_package.zip`
-- `FencePlanner_Online_Installer.bat`
-- `FencePlanner_Setup.bat`
-- `FencePlanner_Setup.ps1`
+- `FencePlanner_Installer.bat`
 - `Installer_fra_lokal_pakke.bat`
 
 ## SHA256
 
 ```text
-4277C9220D6EA8013E449FE77173FD58BC49FA08C1C96D0CFA2DED345EA688DD
+35A96EA0654A7B77301FF2813332878BB45C3A0237A54D790D18E9B3B3DAF4B0
 ```

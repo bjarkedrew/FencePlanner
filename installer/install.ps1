@@ -114,6 +114,33 @@ Get-Process | Where-Object {
 }
 Copy-Item -Force $builtExe $installedExe
 
+$sourceTools = Join-Path $projectDir ".tools"
+if (Test-Path $sourceTools) {
+    $targetTools = Join-Path $installDir ".tools"
+    if (Test-Path $targetTools) {
+        Remove-Item -LiteralPath $targetTools -Recurse -Force
+    }
+    Copy-Item -Recurse -Force $sourceTools $targetTools
+}
+
+$sourceSyncServer = Join-Path $projectDir "sync_server"
+if (Test-Path $sourceSyncServer) {
+    $targetSyncServer = Join-Path $installDir "sync_server"
+    if (Test-Path $targetSyncServer) {
+        Remove-Item -LiteralPath $targetSyncServer -Recurse -Force
+    }
+    Copy-Item -Recurse -Force $sourceSyncServer $targetSyncServer
+}
+
+$sourceQrServerBat = Join-Path $projectDir "start_qr_sync_server.bat"
+if (Test-Path $sourceQrServerBat) {
+    Copy-Item -Force $sourceQrServerBat (Join-Path $installDir "start_qr_sync_server.bat")
+}
+
+$targetInstaller = Join-Path $installDir "installer"
+New-Item -ItemType Directory -Force -Path $targetInstaller | Out-Null
+Copy-Item -Force (Join-Path $scriptDir "uninstall.ps1") (Join-Path $targetInstaller "uninstall.ps1")
+
 $desktopShortcut = Join-Path ([Environment]::GetFolderPath("Desktop")) "$appName.lnk"
 $startMenuDir = Join-Path ([Environment]::GetFolderPath("Programs")) $appName
 $startMenuShortcut = Join-Path $startMenuDir "$appName.lnk"
