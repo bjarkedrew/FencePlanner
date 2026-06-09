@@ -15,7 +15,7 @@ Programmet er lavet til praktisk markarbejde: lav planen paa computeren med sate
 - Gemmer hegnsplaner, saa de kan indlaeses igen senere
 - Skriver `TrackLines.txt`, saa linjer kan bruges i AgOpenGPS
 - Har KOR-fane til GPS/simpleRTK2B via NMEA/COM-port
-- Kan sende flere gemte planer til mobil via QR-sync
+- Kan opdatere en mobilside med den aktuelle mark og vise QR-kode
 - Har automatisk opdateringsknap under fanen `Program`
 
 ## Markfiler
@@ -49,7 +49,7 @@ Det betyder, at satellitkort og mobil GPS stadig kan bruges, selv om en download
 5. Flyt punkterne paa kortet, indtil hegnene ligger rigtigt.
 6. Tryk `Gem hegnsplan`, hvis planen skal gemmes til senere.
 7. Tryk `Koer mark` for at gaa direkte til KOR-fanen.
-8. Tryk `Upload QR-sync`, hvis planen skal bruges paa mobil.
+8. Tryk `Mobil QR`, hvis planen skal bruges paa mobil.
 
 ## Parallelle Zoner
 
@@ -99,21 +99,25 @@ Den kan:
 
 simpleRTK2B kan bruges, hvis den sender NMEA via COM-port. Centimeterpraecision kraever normalt RTK-korrektioner.
 
-## Mobil Og QR-Sync
+## Mobil QR
 
-QR-sync kan sende gemte hegnsplaner til en mobilside.
+Mobil QR laver en enkel mobilside med den mark og hegnsplan, der er aaben i programmet lige nu.
 
 Arbejdsgang:
 
-1. Gem en eller flere hegnsplaner.
-2. Tryk `Upload QR-sync`.
+1. Lav eller indlaes en hegnsplan.
+2. Tryk `Mobil QR`.
 3. Scan QR-koden paa mobilen.
-4. Vaelg mark/hegnslinje paa mobilen.
+4. Vaelg hegnslinje paa mobilen.
 5. Brug mobilens GPS som guide.
 
-Ved lokal test starter programmet selv den lokale QR-server, hvis serverlinket er `127.0.0.1` eller `localhost`.
+Programmet opdaterer `docs/mobile/index.html` i GitHub-repoet og pusher den til GitHub Pages. Der uploades kun den aktuelle mark/plan, ikke en hel sync-mappe med flere marker.
 
-For rigtig mobilbrug uden at desktop-programmet er aabent skal sync-serveren hostes online med HTTPS. QR-koden er kun et laeselink; desktop-programmet beholder upload-noeglen lokalt.
+Mobilens GPS virker bedst, fordi siden ligger paa en almindelig HTTPS-adresse:
+
+```text
+https://bjarkedrew.github.io/FencePlanner/mobile/
+```
 
 ## Installation
 

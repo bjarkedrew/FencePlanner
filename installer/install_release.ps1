@@ -49,6 +49,13 @@ Get-Process | Where-Object {
     Write-Host "Lukker koerende program: $($_.Id)"
     Stop-Process -Id $_.Id -Force
 }
+$installedNode = Join-Path $installDir ".tools\node-v22.22.3-win-x64\node.exe"
+Get-Process | Where-Object {
+    $_.Path -and ($_.Path -ieq $installedNode)
+} | ForEach-Object {
+    Write-Host "Lukker koerende QR-server/Node: $($_.Id)"
+    Stop-Process -Id $_.Id -Force
+}
 
 Copy-Item -Force $sourceExe $installedExe
 
