@@ -36,6 +36,7 @@ Windows-program til planlægning af hegn, zoner og pælepunkter ud fra AgOpenGPS
 - Vifte tager nu hoejde for A/B-raekkefoelgen og deler fra linje til linje
 - Programnavn og Program-fane viser nu samme versionsnummer som GitHub release
 - Antal zoner har nu tydelige plus/minus-knapper, saa zonetallet kan skrues op uden den lille spinbox-pil
+- De indbyggede pile i zonetalsfeltet er skjult, saa kun plus/minus-knapperne bruges
 - `Koer mark` skifter direkte til KØR-fanen med valgt mark og hegnslinjer
 - KØR-fanen viser linjelængde, pæle og GPS-koordinater for valgt hegnslinje
 
@@ -63,5 +64,5 @@ Læg dem i samme mappe og kør `Installer_fra_lokal_pakke.bat`.
 ## SHA256
 
 ```text
-BD5AA584712069B9B5FB2123277BC75B8C647D0E8D9DAFCD13848CB41FE0976A
+9EBDBE3B3B685312D853CBE1B5552D6C3DC8EFC6E21BBBC095E3A8711D43F030
 ```

@@ -199,6 +199,7 @@ class MainWindow(QMainWindow):
         self.zone_count_spin.setMaximum(100)
         self.zone_count_spin.setValue(3)
         self.zone_count_spin.setKeyboardTracking(False)
+        self.zone_count_spin.setButtonSymbols(QAbstractSpinBox.NoButtons)
         self.zone_count_spin.valueChanged.connect(self.regenerate_live)
         self.zone_count_minus = QPushButton("-")
         self.zone_count_minus.setFixedWidth(42)
