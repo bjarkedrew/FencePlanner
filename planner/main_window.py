@@ -42,6 +42,7 @@ from .models import Point
 from .nmea import parse_nmea_line
 from .sync_server import FenceSyncServer
 from .sync_cloud import load_sync_settings, mobile_url, reset_sync_settings, save_sync_settings, upload_mobile_cloud
+from .version import APP_TITLE, APP_VERSION
 
 
 class GpsReader(QThread):
@@ -134,7 +135,7 @@ class MobileGuideStarter(QThread):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("AgOpenGPS Fence Planner v1.3")
+        self.setWindowTitle(APP_TITLE)
         self.fields_path = default_fields_path()
         self.field = None
         self.fences = []
@@ -344,13 +345,14 @@ class MainWindow(QMainWindow):
         t = QTextEdit()
         t.setReadOnly(True)
         t.setPlainText(
-            "AgOpenGPS Fence Planner\n\n"
+            f"{APP_TITLE}\n\n"
             "Programmet bruges til at importere AgOpenGPS/AgShare-marker, planlaegge zoner og hegnslinjer, "
             "gemme hegnsplaner og bruge dem paa computer eller mobil.\n\n"
             "Mobil QR starter en midlertidig HTTPS-webguide med den aktuelle mark, "
             "saa telefonen kan bruges som GPS-guide ude i marken uden GitHub-upload.\n\n"
             "RTK er ikke noedvendigt for almindelig mobilguide. simpleRTK2B kan bruges via NMEA/COM-port, "
-            "og centimeterpraecision kraever RTK-korrektioner."
+            "og centimeterpraecision kraever RTK-korrektioner.\n\n"
+            f"Installeret version: {APP_VERSION}"
         )
         btn_update = QPushButton("Hent/opdater nyeste version")
         btn_update.clicked.connect(self.update_program)
