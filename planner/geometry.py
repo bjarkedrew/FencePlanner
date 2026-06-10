@@ -263,45 +263,159 @@ def line_intersection_point(a1: Point, b1: Point, a2: Point, b2: Point) -> Point
 def lerp_point(a: Point, b: Point, t: float) -> Point:
     return Point(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)
 
+def guide_line_equation(a: Point, b: Point):
+    dx, dy = b.x - a.x, b.y - a.y
+    length = hypot(dx, dy)
+    if length < 0.01:
+        raise ValueError("En viftelinje er for kort.")
+    # Normalized line: nx*x + ny*y + c = 0.
+    nx, ny = -dy / length, dx / length
+    c = -(nx * a.x + ny * a.y)
+    return nx, ny, c
+
+def line_value(eq, p: Point):
+    nx, ny, c = eq
+    return nx * p.x + ny * p.y + c
+
+def flip_line(eq):
+    nx, ny, c = eq
+    return -nx, -ny, -c
+
+def orient_guide_lines(a1: Point, b1: Point, a2: Point, b2: Point):
+    line1 = guide_line_equation(a1, b1)
+    line2 = guide_line_equation(a2, b2)
+    avg_line2_on_line1 = (line_value(line1, a2) + line_value(line1, b2)) / 2
+    if avg_line2_on_line1 < 0:
+        line1 = flip_line(line1)
+    avg_line1_on_line2 = (line_value(line2, a1) + line_value(line2, b1)) / 2
+    if avg_line1_on_line2 > 0:
+        line2 = flip_line(line2)
+    return line1, line2
+
+def interpolate_line(line1, line2, t: float):
+    return (
+        line1[0] * (1 - t) + line2[0] * t,
+        line1[1] * (1 - t) + line2[1] * t,
+        line1[2] * (1 - t) + line2[2] * t,
+    )
+
+def clip_polygon_by_line_value(poly: List[Point], eq, keep_greater_equal: bool) -> List[Point]:
+    if not poly:
+        return []
+    out = []
+
+    def inside(p):
+        value = line_value(eq, p)
+        return value >= -1e-9 if keep_greater_equal else value <= 1e-9
+
+    def intersect(a, b):
+        va = line_value(eq, a)
+        vb = line_value(eq, b)
+        t = va / (va - vb) if abs(va - vb) > 1e-12 else 0.0
+        return Point(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y))
+
+    prev = poly[-1]
+    prev_in = inside(prev)
+    for cur in poly:
+        cur_in = inside(cur)
+        if cur_in:
+            if not prev_in:
+                out.append(intersect(prev, cur))
+            out.append(cur)
+        elif prev_in:
+            out.append(intersect(prev, cur))
+        prev, prev_in = cur, cur_in
+
+    cleaned = []
+    for p in out:
+        if not cleaned or hypot(cleaned[-1].x - p.x, cleaned[-1].y - p.y) > 1e-6:
+            cleaned.append(p)
+    if len(cleaned) > 1 and hypot(cleaned[0].x - cleaned[-1].x, cleaned[0].y - cleaned[-1].y) < 1e-6:
+        cleaned.pop()
+    return cleaned
+
+def polygon_between_guide_lines(boundary: List[Point], line1, line2) -> List[Point]:
+    part = clip_polygon_by_line_value(boundary, line1, keep_greater_equal=True)
+    return clip_polygon_by_line_value(part, line2, keep_greater_equal=False)
+
+def guide_area_until(boundary: List[Point], line1, line2, t: float) -> float:
+    cut = interpolate_line(line1, line2, t)
+    part = polygon_between_guide_lines(boundary, line1, line2)
+    part = clip_polygon_by_line_value(part, cut, keep_greater_equal=False)
+    return polygon_area(part)
+
+def find_guide_cut_for_area(boundary: List[Point], line1, line2, target_area: float):
+    lo, hi = 0.0, 1.0
+    for _ in range(60):
+        mid = (lo + hi) / 2
+        if guide_area_until(boundary, line1, line2, mid) < target_area:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2
+
+def line_equation_intersections(poly: List[Point], eq):
+    pts = []
+    if not poly:
+        return pts
+    for i in range(len(poly)):
+        a = poly[i]
+        b = poly[(i + 1) % len(poly)]
+        va = line_value(eq, a)
+        vb = line_value(eq, b)
+        if abs(va) < 1e-8:
+            pts.append(a)
+        if va * vb < -1e-10:
+            t = va / (va - vb)
+            pts.append(Point(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y)))
+        elif abs(vb) < 1e-8:
+            pts.append(b)
+    unique = []
+    for p in pts:
+        if not any(hypot(p.x - q.x, p.y - q.y) < 0.01 for q in unique):
+            unique.append(p)
+    if len(unique) <= 2:
+        return unique
+    best = (unique[0], unique[1])
+    best_d = -1
+    for i in range(len(unique)):
+        for j in range(i + 1, len(unique)):
+            d = hypot(unique[i].x - unique[j].x, unique[i].y - unique[j].y)
+            if d > best_d:
+                best_d = d
+                best = (unique[i], unique[j])
+    return [best[0], best[1]]
+
 def generate_fan_between_guide_lines(boundary, a1, b1, a2, b2, fold_count):
     if fold_count < 2:
         raise ValueError("Antal zoner skal vaere mindst 2")
     boundary = ensure_ccw(boundary)
-    origin = line_intersection_point(a1, b1, a2, b2)
-    if origin is None:
-        raise ValueError("De to viftelinjer maa ikke vaere parallelle. Tegn dem saa de peger mod samme vifte/spids.")
-
-    angle1 = atan2(b1.y - a1.y, b1.x - a1.x)
-    angle2 = atan2(b2.y - a2.y, b2.x - a2.x)
-    while angle2 <= angle1:
-        angle2 += 2 * pi
-
-    start_low, start_high = a1, a2
-    low, high = angle1, angle2
-    if high - low > pi:
-        low, high = angle2 - 2 * pi, angle1
-        start_low, start_high = a2, a1
-
-    sector_total = polygon_area(fan_sector_polygon(boundary, origin, low, high))
+    line1, line2 = orient_guide_lines(a1, b1, a2, b2)
+    strip = polygon_between_guide_lines(boundary, line1, line2)
+    sector_total = polygon_area(strip)
     if sector_total < 0.01:
-        raise ValueError("Viftelinjerne rammer ikke et brugbart areal. Proev at vende eller flytte A/B-linjerne.")
-
+        raise ValueError("De to viftelinjer rammer ikke et brugbart areal. Flyt linjerne, saa marken ligger mellem dem.")
     target = sector_total / fold_count
-    cuts = [find_fan_cut_for_area(boundary, origin, low, high, target * i) for i in range(1, fold_count)]
+    cuts = [find_guide_cut_for_area(boundary, line1, line2, target * i) for i in range(1, fold_count)]
     fences = []
-    for idx, angle in enumerate(cuts, 1):
-        t = (angle - low) / max(high - low, 1e-9)
-        start = lerp_point(start_low, start_high, t)
-        end = ray_polygon_endpoint(boundary, origin, angle)
-        if not end:
+    for idx, cut_t in enumerate(cuts, 1):
+        cut = interpolate_line(line1, line2, cut_t)
+        pts = line_equation_intersections(strip, cut)
+        if len(pts) < 2:
             continue
-        if hypot(end.x - start.x, end.y - start.y) < 0.01:
-            continue
-        angle_rad = atan2(end.x - start.x, end.y - start.y)
-        fences.append(FenceLine(f"Hegn {idx}", start, end, angle_rad, hypot(end.x - start.x, end.y - start.y)))
+        p1, p2 = pts[0], pts[1]
+        angle_rad = atan2(p2.x - p1.x, p2.y - p1.y)
+        fences.append(FenceLine(f"Hegn {idx}", p1, p2, angle_rad, hypot(p2.x - p1.x, p2.y - p1.y)))
 
-    bounds = [low] + cuts + [high]
-    fold_areas = [polygon_area(fan_sector_polygon(boundary, origin, bounds[i], bounds[i + 1])) for i in range(fold_count)]
+    bounds = [0.0] + cuts + [1.0]
+    fold_areas = []
+    for i in range(fold_count):
+        high_cut = interpolate_line(line1, line2, bounds[i + 1])
+        low_cut = interpolate_line(line1, line2, bounds[i])
+        part = polygon_between_guide_lines(boundary, line1, line2)
+        part = clip_polygon_by_line_value(part, low_cut, keep_greater_equal=True)
+        part = clip_polygon_by_line_value(part, high_cut, keep_greater_equal=False)
+        fold_areas.append(polygon_area(part))
     return fences, fold_areas
 
 def signed_cross_track(p, a, b):

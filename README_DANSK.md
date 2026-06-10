@@ -14,7 +14,8 @@ Windows-program til planlaegning af rotationszoner og hegnslinjer til AgOpenGPS.
 - Har flytbare A/B-punkter direkte paa kortet
 - Opdaterer zoner, hektar og hegnslinjer live
 - Bruger `Antal zoner`, hvor fx 3 zoner giver 2 hegn
-- Kan lave parallelle zoner eller vifte-zoner mellem to A/B-yderlinjer
+- Kan lave parallelle zoner eller vifte-zoner mellem to yderlinjer
+- Vifte tager hoejde for A/B-raekkefoelgen og deler fra linje til linje
 - Har justerbar paeleafstand med 10/25/50 m som forvalg og mulighed for selv at skrive afstand
 - Viser antal paele pr. hegnslinje og samlet antal paele
 - Kan gemme og indlaese hegnsplaner igen senere

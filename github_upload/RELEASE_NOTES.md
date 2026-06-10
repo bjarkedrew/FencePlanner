@@ -33,6 +33,7 @@ Windows-program til planlægning af hegn, zoner og pælepunkter ud fra AgOpenGPS
 - QR-sync er erstattet af enklere `Mobil QR` til én aktuel mark ad gangen
 - Mobil QR laver midlertidigt HTTPS-link og QR-kode uden GitHub-upload
 - Mobil QR uploader ikke markdata til GitHub Pages og laver ikke online sync-mappe
+- Vifte tager nu hoejde for A/B-raekkefoelgen og deler fra linje til linje
 - `Koer mark` skifter direkte til KØR-fanen med valgt mark og hegnslinjer
 - KØR-fanen viser linjelængde, pæle og GPS-koordinater for valgt hegnslinje
 
@@ -60,5 +61,5 @@ Læg dem i samme mappe og kør `Installer_fra_lokal_pakke.bat`.
 ## SHA256
 
 ```text
-07E2EE4E134225FEF56953D40CD5AD3E99DD735F8D04C2624E1709B7D0F3A90C
+0486A8EA6F36B91CE8423F243DB35094835FDA250C51ECAB38C7D7340DB9B5DC
 ```

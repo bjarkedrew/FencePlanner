@@ -72,7 +72,7 @@ A1 -> B1 -> A2 -> B2
 
 `A1-B1` og `A2-B2` er de to yderlinjer. Programmet fordeler hegnslinjerne mellem dem efter det valgte antal zoner.
 
-Afstanden mellem `A1` og `A2` bliver aabningen i viften, saa hegnene ikke behøver at ende i en helt skarp spids.
+Vifte bruger linjerne som yderlinjer, saa det er ligegyldigt om en linje er klikket A til B eller B til A. Det er kun placeringen af de to linjer, der bestemmer omraadet mellem dem.
 
 ## Paele
 
