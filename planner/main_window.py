@@ -198,7 +198,14 @@ class MainWindow(QMainWindow):
         self.zone_count_spin.setMinimum(2)
         self.zone_count_spin.setMaximum(100)
         self.zone_count_spin.setValue(3)
+        self.zone_count_spin.setKeyboardTracking(False)
         self.zone_count_spin.valueChanged.connect(self.regenerate_live)
+        self.zone_count_minus = QPushButton("-")
+        self.zone_count_minus.setFixedWidth(42)
+        self.zone_count_minus.clicked.connect(self.decrease_zone_count)
+        self.zone_count_plus = QPushButton("+")
+        self.zone_count_plus.setFixedWidth(42)
+        self.zone_count_plus.clicked.connect(self.increase_zone_count)
 
         self.fan_gap_spin = QDoubleSpinBox()
         self.fan_gap_spin.setRange(0.0, 200.0)
@@ -257,7 +264,11 @@ class MainWindow(QMainWindow):
         controls_layout.addWidget(QLabel("Zonetype"))
         controls_layout.addWidget(self.zone_mode_combo)
         controls_layout.addWidget(QLabel("Antal zoner"))
-        controls_layout.addWidget(self.zone_count_spin)
+        zone_count_row = QHBoxLayout()
+        zone_count_row.addWidget(self.zone_count_minus)
+        zone_count_row.addWidget(self.zone_count_spin, 1)
+        zone_count_row.addWidget(self.zone_count_plus)
+        controls_layout.addLayout(zone_count_row)
         controls_layout.addWidget(QLabel("Pæleafstand"))
         controls_layout.addWidget(self.stake_spacing_combo)
         controls_layout.addWidget(btn_ab)
@@ -707,6 +718,14 @@ finally {
             self.generate(silent=True)
         elif self.field and self.a and self.b:
             self.generate(silent=True)
+
+    def increase_zone_count(self):
+        value = min(self.zone_count_spin.maximum(), self.zone_count_spin.value() + 1)
+        self.zone_count_spin.setValue(value)
+
+    def decrease_zone_count(self):
+        value = max(self.zone_count_spin.minimum(), self.zone_count_spin.value() - 1)
+        self.zone_count_spin.setValue(value)
 
     def stake_spacing(self):
         text = self.stake_spacing_combo.currentText().strip().lower().replace(",", ".").replace("m", "").strip()
