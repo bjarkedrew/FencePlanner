@@ -37,7 +37,7 @@ from .geometry import (
 )
 from .kml_transform import KmlLocalTransform
 from .map_canvas import MapCanvas
-from .mobile_export import build_mobile_payload, export_mobile_html, render_mobile_html
+from .mobile_export import build_mobile_payload, export_mobile_html
 from .models import Point
 from .nmea import parse_nmea_line
 from .sync_server import FenceSyncServer
@@ -242,7 +242,7 @@ class MainWindow(QMainWindow):
         btn_mobile_cloud = QPushButton("Eksporter mobilsky")
         btn_mobile_cloud.clicked.connect(self.export_mobile_cloud)
         btn_mobile_qr = QPushButton("Mobil QR")
-        btn_mobile_qr.clicked.connect(self.publish_current_mobile_qr)
+        btn_mobile_qr.clicked.connect(self.start_mobile_guide)
         self.btn_sync = QPushButton("Start trådløs sync")
         self.btn_sync.clicked.connect(self.toggle_sync_server)
         self.sync_label = QLabel("Sync: stoppet")
@@ -347,8 +347,8 @@ class MainWindow(QMainWindow):
             "AgOpenGPS Fence Planner\n\n"
             "Programmet bruges til at importere AgOpenGPS/AgShare-marker, planlaegge zoner og hegnslinjer, "
             "gemme hegnsplaner og bruge dem paa computer eller mobil.\n\n"
-            "Mobil QR opdaterer en enkel HTTPS-mobilside med den aktuelle mark, "
-            "saa telefonen kan bruges som GPS-guide ude i marken.\n\n"
+            "Mobil QR starter en midlertidig HTTPS-webguide med den aktuelle mark, "
+            "saa telefonen kan bruges som GPS-guide ude i marken uden GitHub-upload.\n\n"
             "RTK er ikke noedvendigt for almindelig mobilguide. simpleRTK2B kan bruges via NMEA/COM-port, "
             "og centimeterpraecision kraever RTK-korrektioner."
         )
@@ -1033,92 +1033,6 @@ finally {
             )
         except Exception as e:
             QMessageBox.critical(self, "Mobilsky fejl", str(e))
-
-    def publish_current_mobile_qr(self):
-        try:
-            payload = self.mobile_payload()
-        except Exception as e:
-            QMessageBox.critical(self, "Mobil QR fejl", str(e))
-            return
-
-        reply = QMessageBox.question(
-            self,
-            "Mobil QR",
-            "Den aktuelle mark og hegnslinjer bliver lagt ud som mobilside paa GitHub Pages.\n\n"
-            "Der uploades kun den mark/plan, du har aaben nu.\n\n"
-            "Vil du opdatere mobilsiden?",
-        )
-        if reply != QMessageBox.Yes:
-            return
-
-        try:
-            repo = self.find_repo_root()
-            mobile_dir = repo / "docs" / "mobile"
-            mobile_dir.mkdir(parents=True, exist_ok=True)
-            (mobile_dir / "index.html").write_text(render_mobile_html(payload), encoding="utf-8")
-            data_json = mobile_dir / "data.json"
-            if data_json.exists():
-                data_json.unlink()
-
-            git = self.find_git()
-            self.run_git(git, repo, ["add", "-A", "docs/mobile"])
-            diff = subprocess.run(
-                [str(git), "diff", "--cached", "--quiet"],
-                cwd=str(repo),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-            if diff.returncode != 0:
-                self.run_git(git, repo, ["config", "user.name", "bjarkedrew"])
-                self.run_git(git, repo, ["config", "user.email", "bjarkedrew@users.noreply.github.com"])
-                self.run_git(git, repo, ["commit", "-m", "Update current mobile guide"])
-                self.run_git(git, repo, ["push", "origin", "main"])
-
-            url = "https://bjarkedrew.github.io/FencePlanner/mobile/"
-            QApplication.clipboard().setText(url)
-            self.show_qr_dialog(
-                url,
-                "Mobilside opdateret med aktuel mark.\n"
-                "GitHub Pages kan bruge et lille oejeblik paa at opdatere.\n"
-                "Linket er kopieret til udklipsholderen.",
-            )
-        except Exception as e:
-            QMessageBox.critical(self, "Mobil QR fejl", str(e))
-
-    def find_repo_root(self):
-        candidates = [
-            Path.cwd(),
-            Path(__file__).resolve().parents[1],
-            Path.home() / "Documents" / "FencePlanner",
-        ]
-        for candidate in candidates:
-            if (candidate / ".git").exists():
-                return candidate
-        raise FileNotFoundError("Kunne ikke finde FencePlanner GitHub-mappen med .git.")
-
-    def find_git(self):
-        candidates = [
-            Path("C:/Program Files/Git/cmd/git.exe"),
-            shutil.which("git"),
-        ]
-        for candidate in candidates:
-            if candidate and Path(candidate).exists():
-                return Path(candidate)
-        raise FileNotFoundError("Git blev ikke fundet. Installer Git, eller aabn fra FencePlanner GitHub-mappen.")
-
-    def run_git(self, git, repo, args):
-        result = subprocess.run(
-            [str(git), *args],
-            cwd=str(repo),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        if result.returncode != 0:
-            text = (result.stderr or result.stdout or "").strip()
-            raise RuntimeError(f"Git fejlede: git {' '.join(args)}\n{text}")
-        return result.stdout
 
     def upload_qr_sync(self):
         try:

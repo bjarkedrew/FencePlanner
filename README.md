@@ -15,7 +15,7 @@ Programmet er lavet til praktisk markarbejde: lav planen paa computeren med sate
 - Gemmer hegnsplaner, saa de kan indlaeses igen senere
 - Skriver `TrackLines.txt`, saa linjer kan bruges i AgOpenGPS
 - Har KOR-fane til GPS/simpleRTK2B via NMEA/COM-port
-- Kan opdatere en mobilside med den aktuelle mark og vise QR-kode
+- Kan lave midlertidigt HTTPS-link og QR-kode til den aktuelle mark
 - Har automatisk opdateringsknap under fanen `Program`
 
 ## Markfiler
@@ -101,7 +101,7 @@ simpleRTK2B kan bruges, hvis den sender NMEA via COM-port. Centimeterpraecision 
 
 ## Mobil QR
 
-Mobil QR laver en enkel mobilside med den mark og hegnsplan, der er aaben i programmet lige nu.
+Mobil QR laver et midlertidigt HTTPS-link med den mark og hegnsplan, der er aaben i programmet lige nu.
 
 Arbejdsgang:
 
@@ -111,13 +111,7 @@ Arbejdsgang:
 4. Vaelg hegnslinje paa mobilen.
 5. Brug mobilens GPS som guide.
 
-Programmet opdaterer `docs/mobile/index.html` i GitHub-repoet og pusher den til GitHub Pages. Der uploades kun den aktuelle mark/plan, ikke en hel sync-mappe med flere marker.
-
-Mobilens GPS virker bedst, fordi siden ligger paa en almindelig HTTPS-adresse:
-
-```text
-https://bjarkedrew.github.io/FencePlanner/mobile/
-```
+Programmet uploader ikke marken til GitHub og laver ikke en online sync-mappe. Desktop-programmet skal vaere aabent, mens mobilen bruger QR-linket.
 
 ## Installation
 

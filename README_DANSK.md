@@ -20,7 +20,7 @@ Windows-program til planlaegning af rotationszoner og hegnslinjer til AgOpenGPS.
 - Kan gemme og indlaese hegnsplaner igen senere
 - Kan gemme som ny AgOpenGPS-mark og skrive `TrackLines.txt`
 - Har KOR-fane med simpleRTK2B/NMEA GPS via COM-port
-- Har Mobil QR til den aktuelle mark/hegnsplan
+- Har Mobil QR med midlertidigt HTTPS-link til den aktuelle mark/hegnsplan
 - Har automatisk opdateringsknap under fanen `Program`
 
 ## QR-Sync Til Mobil
@@ -30,7 +30,7 @@ Windows-program til planlaegning af rotationszoner og hegnslinjer til AgOpenGPS.
 3. Tryk `Mobil QR`.
 5. Scan QR-koden med mobilen.
 
-Mobil QR opdaterer GitHub Pages med kun den mark/plan, der er aaben lige nu. Der bruges ikke sync-server eller en mappe med alle marker.
+Mobil QR laver et midlertidigt HTTPS-link og QR-kode for den mark/plan, der er aaben lige nu. Der bruges ikke GitHub-upload, sync-server eller en mappe med alle marker.
 
 Mobilen viser mark, hegn, paelepunkter, GPS-position og afstand til valgt hegnslinje.
 

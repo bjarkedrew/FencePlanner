@@ -23,7 +23,7 @@ Windows-program til planlægning af hegn, zoner og pælepunkter ud fra AgOpenGPS
 - Mobilguide med HTTPS-link og QR-kode
 - Telefonens GPS kan bruges som markør ude i marken
 - Mobilsky-eksport kan samle flere gemte hegnsplaner til en mobilside
-- Ny enklere `Mobil QR`, der opdaterer GitHub Pages med kun den aktuelle mark
+- Ny enklere `Mobil QR`, der laver midlertidigt HTTPS-link til kun den aktuelle mark
 - QR-koden peger paa en fast HTTPS-mobilside i stedet for lokal sync-server
 - Ny `Vifte`-knap med fire punkter: A1/B1 og A2/B2 som yderlinjer
 - Vifte fordeler hegnslinjer mellem de to yderlinjer; A1-A2 bestemmer aabningen
@@ -31,7 +31,8 @@ Windows-program til planlægning af hegn, zoner og pælepunkter ud fra AgOpenGPS
 - Knapper/indstillinger i planlaegning ligger nu i et scrollfelt
 - Opdateringsknappen henter og installerer nyeste release automatisk
 - QR-sync er erstattet af enklere `Mobil QR` til én aktuel mark ad gangen
-- Mobil QR opdaterer `docs/mobile/index.html` og viser QR-kode til GitHub Pages
+- Mobil QR laver midlertidigt HTTPS-link og QR-kode uden GitHub-upload
+- Mobil QR uploader ikke markdata til GitHub Pages og laver ikke online sync-mappe
 - `Koer mark` skifter direkte til KØR-fanen med valgt mark og hegnslinjer
 - KØR-fanen viser linjelængde, pæle og GPS-koordinater for valgt hegnslinje
 
@@ -59,5 +60,5 @@ Læg dem i samme mappe og kør `Installer_fra_lokal_pakke.bat`.
 ## SHA256
 
 ```text
-01A61FA1F6D53B0C6824746083F249D41B17A0A8FAF4E0D8A7241C672EC29BAC
+07E2EE4E134225FEF56953D40CD5AD3E99DD735F8D04C2624E1709B7D0F3A90C
 ```
