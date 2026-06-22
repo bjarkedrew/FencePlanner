@@ -343,6 +343,33 @@ def point_on_polyline(points: List[Point], along: float) -> Point:
         remaining -= seg_len
     return points[-1]
 
+def resample_polyline(points: List[Point], spacing: float = 8.0) -> List[Point]:
+    length = polyline_length(points)
+    if length <= 0:
+        return points[:]
+    count = max(2, int(length / max(spacing, 0.5)) + 1)
+    return [point_on_polyline(points, length * i / (count - 1)) for i in range(count)]
+
+def offset_polyline_left(points: List[Point], offset_m: float) -> List[Point]:
+    if len(points) < 2:
+        return points[:]
+    out = []
+    for i, p in enumerate(points):
+        if i == 0:
+            prev_p, next_p = points[0], points[1]
+        elif i == len(points) - 1:
+            prev_p, next_p = points[-2], points[-1]
+        else:
+            prev_p, next_p = points[i - 1], points[i + 1]
+        dx, dy = next_p.x - prev_p.x, next_p.y - prev_p.y
+        length = hypot(dx, dy)
+        if length < 1e-9:
+            out.append(p)
+            continue
+        nx, ny = -dy / length, dx / length
+        out.append(Point(p.x + nx * offset_m, p.y + ny * offset_m))
+    return out
+
 def generate_boundary_curve_fences(boundary, a, b, fold_count):
     if fold_count < 2:
         raise ValueError("Antal zoner skal vaere mindst 2")
@@ -362,13 +389,24 @@ def generate_boundary_curve_fences(boundary, a, b, fold_count):
         start_along, end_along = end_along, start_along
         forward = backward
     curve = boundary_polyline_between(boundary, start_along, start_along + forward)
+    curve = resample_polyline(curve, 8.0)
     length = polyline_length(curve)
     if length < 0.01:
         raise ValueError("Kurvestraekningen er for kort.")
+    offset_step = polygon_area(boundary) / max(length, 0.01) / fold_count
     fences = []
     for idx in range(1, fold_count):
-        p = point_on_polyline(curve, length * idx / fold_count)
-        fences.append(FenceLine(f"Hegn {idx}", start, p, atan2(p.x - start.x, p.y - start.y), distance(start, p)))
+        points = offset_polyline_left(curve, offset_step * idx)
+        line_length = polyline_length(points)
+        start_p, end_p = points[0], points[-1]
+        fences.append(FenceLine(
+            f"Hegn {idx}",
+            start_p,
+            end_p,
+            atan2(end_p.x - start_p.x, end_p.y - start_p.y),
+            line_length,
+            points,
+        ))
     fold_areas = [polygon_area(boundary) / fold_count for _ in range(fold_count)]
     return fences, fold_areas, start, end
 
@@ -534,6 +572,29 @@ def signed_cross_track(p, a, b):
         return 0.0
     return ((p.x-a.x)*vy - (p.y-a.y)*vx) / L
 
+def fence_points(fence):
+    return fence.points if getattr(fence, "points", None) else [fence.start, fence.end]
+
+def signed_cross_track_to_fence(p, fence):
+    points = fence_points(fence)
+    if len(points) < 2:
+        return 0.0
+    best = None
+    for i in range(len(points) - 1):
+        a, b = points[i], points[i + 1]
+        vx, vy = b.x - a.x, b.y - a.y
+        length_sq = vx * vx + vy * vy
+        if length_sq < 1e-12:
+            continue
+        t = ((p.x - a.x) * vx + (p.y - a.y) * vy) / length_sq
+        t = max(0.0, min(1.0, t))
+        q = Point(a.x + vx * t, a.y + vy * t)
+        signed = signed_cross_track(p, a, b)
+        candidate = (abs(distance(p, q)), signed)
+        if best is None or candidate[0] < best[0]:
+            best = candidate
+    return best[1] if best else 0.0
+
 def stake_points_on_line(a, b, spacing_m):
     length = hypot(b.x-a.x, b.y-a.y)
     if spacing_m <= 0:
@@ -546,3 +607,18 @@ def stake_points_on_line(a, b, spacing_m):
     if hypot(pts[-1].x-b.x, pts[-1].y-b.y) > 0.01:
         pts.append(b)
     return pts
+
+def stake_points_on_fence(fence, spacing_m):
+    points = fence_points(fence)
+    if len(points) <= 2 and not getattr(fence, "points", None):
+        return stake_points_on_line(fence.start, fence.end, spacing_m)
+    length = polyline_length(points)
+    if spacing_m <= 0 or length <= 0:
+        return [points[0], points[-1]]
+    count = int(length // spacing_m)
+    stakes = [points[0]]
+    for i in range(1, count + 1):
+        stakes.append(point_on_polyline(points, min(i * spacing_m, length)))
+    if distance(stakes[-1], points[-1]) > 0.01:
+        stakes.append(points[-1])
+    return stakes

@@ -464,19 +464,32 @@ def load_field(field_path):
     return FieldData(field_path.name, field_path, boundary, georef, track, georef_source)
 
 
-def fence_block(f):
+def fence_block_from_points(name, start, end):
+    angle_rad = math.atan2(end.x - start.x, end.y - start.y)
     return "\n".join(
         [
-            f.name,
-            f"{f.angle_rad:.14f}",
-            f"{f.start.x:.3f},{f.start.y:.3f}",
-            f"{f.end.x:.3f},{f.end.y:.3f}",
+            name,
+            f"{angle_rad:.14f}",
+            f"{start.x:.3f},{start.y:.3f}",
+            f"{end.x:.3f},{end.y:.3f}",
             "0",
             "2",
             "True",
             "0",
         ]
     )
+
+
+def fence_blocks(f):
+    points = getattr(f, "points", None)
+    if not points or len(points) < 3:
+        return [fence_block_from_points(f.name, f.start, f.end)]
+    blocks = []
+    for i in range(len(points) - 1):
+        if math.hypot(points[i + 1].x - points[i].x, points[i + 1].y - points[i].y) < 0.05:
+            continue
+        blocks.append(fence_block_from_points(f"{f.name}.{i + 1}", points[i], points[i + 1]))
+    return blocks
 
 
 def merge_tracklines(original, fences):
@@ -494,7 +507,8 @@ def merge_tracklines(original, fences):
     if cleaned and cleaned[-1].strip():
         cleaned.append("")
     for f in fences:
-        cleaned.extend(fence_block(f).splitlines())
+        for block in fence_blocks(f):
+            cleaned.extend(block.splitlines())
     return "\n".join(cleaned).rstrip() + "\n"
 
 
@@ -527,13 +541,16 @@ def point_from_data(data):
 
 
 def fence_to_data(fence):
-    return {
+    data = {
         "name": fence.name,
         "start": point_to_data(fence.start),
         "end": point_to_data(fence.end),
         "angle_rad": fence.angle_rad,
         "length_m": fence.length_m,
     }
+    if getattr(fence, "points", None):
+        data["points"] = [point_to_data(point) for point in fence.points]
+    return data
 
 
 def fence_from_data(data):
@@ -543,6 +560,7 @@ def fence_from_data(data):
         point_from_data(data["end"]),
         float(data.get("angle_rad", 0.0)),
         float(data.get("length_m", 0.0)),
+        [point_from_data(point) for point in data.get("points", [])] or None,
     )
 
 

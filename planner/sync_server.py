@@ -153,6 +153,15 @@ def render_web_guide():
       if (len < 0.001) return 0;
       return ((p.east - a.east) * vy - (p.north - a.north) * vx) / len;
     }
+    function distanceToFenceMeters(pos, fence) {
+      const pts = fence.points && fence.points.length ? fence.points : [fence.start, fence.end];
+      let best = null;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const d = crossTrackMeters(pos, pts[i], pts[i + 1]);
+        if (best === null || Math.abs(d) < Math.abs(best)) best = d;
+      }
+      return best ?? 0;
+    }
     function status(text) { document.getElementById("status").textContent = text; }
 
     async function loadGuide() {
@@ -194,7 +203,7 @@ def render_web_guide():
         bounds.push(...boundary);
       }
       guide.fences.forEach((fence, index) => {
-        const line = [toLatLng(fence.start), toLatLng(fence.end)];
+        const line = (fence.points && fence.points.length ? fence.points : [fence.start, fence.end]).map(toLatLng);
         const layer = L.polyline(line, { color: index === selectedFenceIndex ? "#1f7aff" : "#8ec5ff", weight: index === selectedFenceIndex ? 5 : 3 }).addTo(map);
         fenceLayers.push(layer);
         bounds.push(...line);
@@ -237,7 +246,7 @@ def render_web_guide():
     function updateDistance() {
       if (!guide || !lastPosition) return;
       const fence = guide.fences[selectedFenceIndex];
-      const d = crossTrackMeters({ lat: lastPosition.coords.latitude, lon: lastPosition.coords.longitude }, fence.start, fence.end);
+      const d = distanceToFenceMeters({ lat: lastPosition.coords.latitude, lon: lastPosition.coords.longitude }, fence);
       document.getElementById("distance").textContent = `${Math.abs(d).toFixed(2)} m ${d > 0 ? "VENSTRE" : "HØJRE"}`;
       status(`GPS nøjagtighed ca. ${Math.round(lastPosition.coords.accuracy || 0)} m`);
     }

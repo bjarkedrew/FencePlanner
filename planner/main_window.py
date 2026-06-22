@@ -34,8 +34,8 @@ from .geometry import (
     generate_equal_area_fences,
     generate_fan_between_guide_lines,
     polygon_area,
-    signed_cross_track,
-    stake_points_on_line,
+    signed_cross_track_to_fence,
+    stake_points_on_fence,
 )
 from .kml_transform import KmlLocalTransform
 from .map_canvas import MapCanvas
@@ -929,7 +929,7 @@ finally {
 
         if self.fences and self.fence_combo.currentIndex() >= 0:
             fence = self.fences[self.fence_combo.currentIndex()]
-            stakes = stake_points_on_line(fence.start, fence.end, self.stake_spacing())
+            stakes = stake_points_on_fence(fence, self.stake_spacing())
             lines += [
                 "",
                 f"Valgt linje: {fence.name}",
@@ -942,7 +942,7 @@ finally {
                 lines.append(f"Start GPS: {lat1:.7f}, {lon1:.7f}")
                 lines.append(f"Slut GPS:  {lat2:.7f}, {lon2:.7f}")
             if self.gps_local:
-                xt = signed_cross_track(self.gps_local, fence.start, fence.end)
+                xt = signed_cross_track_to_fence(self.gps_local, fence)
                 side = "VENSTRE" if xt > 0 else "HOJRE"
                 self.big_distance.setText(f"{abs(xt):.2f} m {side}")
         else:
@@ -976,7 +976,7 @@ finally {
         lines += ["", "Hegn:"]
         total_stakes = 0
         for f in self.fences:
-            stakes = stake_points_on_line(f.start, f.end, spacing)
+            stakes = stake_points_on_fence(f, spacing)
             total_stakes += len(stakes)
             lines.append(f"{f.name}: {f.length_m:.1f} m")
             lines.append(f"  Pæle: {len(stakes)} stk ved {self.stake_spacing_label()}")
@@ -1479,12 +1479,12 @@ finally {
         elif self.fences and self.fence_combo.currentIndex() >= 0:
             self.gps_local = self.transform.latlon_to_local(fix.lat, fix.lon)
             f = self.fences[self.fence_combo.currentIndex()]
-            xt = signed_cross_track(self.gps_local, f.start, f.end)
+            xt = signed_cross_track_to_fence(self.gps_local, f)
             side = "VENSTRE" if xt > 0 else "HØJRE"
             self.big_distance.setText(f"{abs(xt):.2f} m {side}")
             lines.append(f"Valgt: {f.name}")
             lines.append(f"Laengde: {f.length_m:.1f} m")
-            lines.append(f"Paele: {len(stake_points_on_line(f.start, f.end, self.stake_spacing()))} stk ved {self.stake_spacing_label()}")
+            lines.append(f"Paele: {len(stake_points_on_fence(f, self.stake_spacing()))} stk ved {self.stake_spacing_label()}")
             lines.append(f"Afstand til linje: {abs(xt):.2f} m {side}")
             self.drive_map.update_dynamic(self.fences, self.a, self.b, self.gps_local, sync_handles=True)
         self.drive_info.setPlainText("\n".join(lines))

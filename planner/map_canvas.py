@@ -3,13 +3,14 @@ from __future__ import annotations
 import math
 
 from PySide6.QtCore import QPoint, QPointF, QRectF, Qt, QUrl, Signal
-from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPen, QPixmap, QPolygonF
+from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest
 from PySide6.QtWidgets import (
     QGraphicsEllipseItem,
     QGraphicsItem,
     QGraphicsLineItem,
     QGraphicsObject,
+    QGraphicsPathItem,
     QGraphicsPixmapItem,
     QGraphicsPolygonItem,
     QGraphicsScene,
@@ -199,9 +200,17 @@ class MapCanvas(QGraphicsView):
                 self.dynamic_items.append(line)
 
         for f in fences:
-            q1 = self.to_scene_point(f.start)
-            q2 = self.to_scene_point(f.end)
-            line = QGraphicsLineItem(q1.x(), q1.y(), q2.x(), q2.y())
+            points = getattr(f, "points", None) or [f.start, f.end]
+            scene_points = [self.to_scene_point(p) for p in points]
+            q1 = scene_points[0]
+            q2 = scene_points[-1]
+            if len(scene_points) > 2:
+                path = QPainterPath(q1)
+                for point in scene_points[1:]:
+                    path.lineTo(point)
+                line = QGraphicsPathItem(path)
+            else:
+                line = QGraphicsLineItem(q1.x(), q1.y(), q2.x(), q2.y())
             line.setPen(QPen(QColor("#2f8cff"), 3))
             line.setZValue(20)
             self.scene.addItem(line)

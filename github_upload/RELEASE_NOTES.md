@@ -40,6 +40,8 @@ Windows-program til planlægning af hegn, zoner og pælepunkter ud fra AgOpenGPS
 - `Generer zoner`, `Vaelg A/B` og `Vifte`-knapperne er fjernet fra planlaegningspanelet
 - Dropdown til linjetype starter nu punktvalg direkte paa kortet
 - Ny linjetype `Kurve`, hvor A/B-punkter paa boundaryen bruges til kurvebaseret planlaegning
+- Kurve-linjer tegnes nu som rigtige kurver/polyline, der flyttes ind i marken fra boundary-strækningen
+- Kurve-linjer gemmes i hegnsplaner og skrives til TrackLines.txt som korte segmenter
 - Programmet tjekker ved opstart om GitHub har en nyere release
 - Program/Om-fanen har nu sprogvalg mellem dansk og engelsk tekst
 - `Koer mark` skifter direkte til KØR-fanen med valgt mark og hegnslinjer
@@ -69,5 +71,5 @@ Læg dem i samme mappe og kør `Installer_fra_lokal_pakke.bat`.
 ## SHA256
 
 ```text
-57241C24DA8DA25B6BC046EE905CA8E239D92F7BFDA857FAC0AFB2B28619DAD8
+AFA2D429B9267716BB48F4A17A30CCE8DFBDA627335CA234589710D17353EBAB
 ```

@@ -5,7 +5,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .geometry import polygon_area, stake_points_on_line
+from .geometry import fence_points, polygon_area, stake_points_on_fence
 
 
 FORMAT_VERSION = 1
@@ -40,7 +40,8 @@ def build_mobile_payload(
     fence_payloads = []
     total_stakes = 0
     for fence in fences:
-        stakes = stake_points_on_line(fence.start, fence.end, stake_spacing_m)
+        points = fence_points(fence)
+        stakes = stake_points_on_fence(fence, stake_spacing_m)
         total_stakes += len(stakes)
         fence_payloads.append(
             {
@@ -48,6 +49,7 @@ def build_mobile_payload(
                 "length_m": round(fence.length_m, 2),
                 "start": point_payload(fence.start, transform),
                 "end": point_payload(fence.end, transform),
+                "points": [point_payload(point, transform) for point in points],
                 "stakes": [point_payload(point, transform) for point in stakes],
             }
         )
@@ -174,6 +176,15 @@ def render_mobile_html(payload):
       if (len < 0.001) return 0;
       return ((p.east - a.east) * vy - (p.north - a.north) * vx) / len;
     }}
+    function distanceToFenceMeters(pos, fence) {{
+      const pts = fence.points && fence.points.length ? fence.points : [fence.start, fence.end];
+      let best = null;
+      for (let i = 0; i < pts.length - 1; i++) {{
+        const d = crossTrackMeters(pos, pts[i], pts[i + 1]);
+        if (best === null || Math.abs(d) < Math.abs(best)) best = d;
+      }}
+      return best ?? 0;
+    }}
 
     const map = L.map('map');
     L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{{z}}/{{y}}/{{x}}', {{
@@ -187,7 +198,8 @@ def render_mobile_html(payload):
     map.fitBounds(boundary.getBounds(), {{ padding: [20, 20] }});
 
     const fenceLayers = GUIDE.fences.map((fence, index) => {{
-      const layer = L.polyline([toLatLng(fence.start), toLatLng(fence.end)], {{
+      const linePoints = (fence.points && fence.points.length ? fence.points : [fence.start, fence.end]);
+      const layer = L.polyline(linePoints.map(toLatLng), {{
         color: index === 0 ? '#1f7aff' : '#8ec5ff',
         weight: index === 0 ? 5 : 3
       }}).addTo(map);
@@ -260,7 +272,7 @@ def render_mobile_html(payload):
         accuracyCircle.setRadius(position.coords.accuracy || 0);
       }}
       const fence = GUIDE.fences[selectedFenceIndex];
-      const d = crossTrackMeters(point, fence.start, fence.end);
+      const d = distanceToFenceMeters(point, fence);
       const side = d > 0 ? 'VENSTRE' : 'HØJRE';
       document.getElementById('distance').textContent = `${{Math.abs(d).toFixed(2)}} m ${{side}}`;
       document.getElementById('status').textContent =

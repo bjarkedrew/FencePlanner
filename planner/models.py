@@ -14,6 +14,7 @@ class FenceLine:
     end: Point
     angle_rad: float
     length_m: float
+    points: Optional[List[Point]] = None
 
 @dataclass
 class FieldData:

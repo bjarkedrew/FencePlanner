@@ -159,6 +159,15 @@ def render_cloud_html(data_url="data.json"):
       if (len < 0.001) return 0;
       return ((p.east - a.east) * vy - (p.north - a.north) * vx) / len;
     }
+    function distanceToFenceMeters(pos, fence) {
+      const pts = fence.points && fence.points.length ? fence.points : [fence.start, fence.end];
+      let best = null;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const d = crossTrackMeters(pos, pts[i], pts[i + 1]);
+        if (best === null || Math.abs(d) < Math.abs(best)) best = d;
+      }
+      return best ?? 0;
+    }
 
     const DATA_URL = __DATA_URL__;
 
@@ -222,7 +231,7 @@ def render_cloud_html(data_url="data.json"):
         bounds.push(...boundary);
       }
       guide.fences.forEach((fence, index) => {
-        const line = [toLatLng(fence.start), toLatLng(fence.end)];
+        const line = (fence.points && fence.points.length ? fence.points : [fence.start, fence.end]).map(toLatLng);
         const layer = L.polyline(line, { color: index === selectedFenceIndex ? "#1d7dff" : "#a9d4ff", weight: index === selectedFenceIndex ? 5 : 3 }).addTo(map);
         layer.bindTooltip(fence.name);
         fenceLayers.push(layer);
@@ -275,7 +284,7 @@ def render_cloud_html(data_url="data.json"):
     function updateDistance() {
       if (!guide || !lastPosition) return;
       const fence = guide.fences[selectedFenceIndex];
-      const d = crossTrackMeters({ lat: lastPosition.coords.latitude, lon: lastPosition.coords.longitude }, fence.start, fence.end);
+      const d = distanceToFenceMeters({ lat: lastPosition.coords.latitude, lon: lastPosition.coords.longitude }, fence);
       document.getElementById("distance").textContent = Math.abs(d).toFixed(2) + " m " + (d > 0 ? "VENSTRE" : "HØJRE");
       status("GPS nøjagtighed ca. " + Math.round(lastPosition.coords.accuracy || 0) + " m");
     }
