@@ -468,14 +468,18 @@ def point_in_polygon(poly: List[Point], p: Point) -> bool:
         pi = poly[i]
         pj = poly[j]
         if ((pi.y > p.y) != (pj.y > p.y)):
-            x_at_y = (pj.x - pi.x) * (p.y - pi.y) / max(pj.y - pi.y, 1e-12) + pi.x
+            dy = pj.y - pi.y
+            if abs(dy) < 1e-12:
+                j = i
+                continue
+            x_at_y = (pj.x - pi.x) * (p.y - pi.y) / dy + pi.x
             if p.x < x_at_y:
                 inside = not inside
         j = i
     if inside:
         return True
     nearest, _ = project_point_to_boundary(poly, p)
-    return distance(nearest, p) < 1e-5
+    return distance(nearest, p) < 0.05
 
 def segment_boundary_t_values(boundary: List[Point], a: Point, b: Point):
     values = [0.0, 1.0]
@@ -501,7 +505,8 @@ def segment_boundary_t_values(boundary: List[Point], a: Point, b: Point):
 def clip_polyline_to_polygon(poly: List[Point], points: List[Point]) -> List[Point]:
     if len(points) < 2:
         return points[:]
-    clipped = []
+    runs = []
+    current = []
     for i in range(len(points) - 1):
         a, b = points[i], points[i + 1]
         values = segment_boundary_t_values(poly, a, b)
@@ -513,14 +518,32 @@ def clip_polyline_to_polygon(poly: List[Point], points: List[Point]) -> List[Poi
             if point_in_polygon(poly, mid):
                 p0 = lerp_point(a, b, t0)
                 p1 = lerp_point(a, b, t1)
-                if not clipped or distance(clipped[-1], p0) > 0.02:
-                    clipped.append(p0)
-                if distance(clipped[-1], p1) > 0.02:
-                    clipped.append(p1)
-    if len(clipped) >= 2:
-        return clipped
-    start, _ = project_point_to_boundary(poly, points[0])
-    end, _ = project_point_to_boundary(poly, points[-1])
+                if current and distance(current[-1], p0) > 0.5:
+                    if len(current) >= 2:
+                        runs.append(current)
+                    current = []
+                if not current or distance(current[-1], p0) > 0.02:
+                    current.append(p0)
+                if distance(current[-1], p1) > 0.02:
+                    current.append(p1)
+            elif current:
+                if len(current) >= 2:
+                    runs.append(current)
+                current = []
+    if len(current) >= 2:
+        runs.append(current)
+    if runs:
+        return max(runs, key=polyline_length)
+    start, start_along = project_point_to_boundary(poly, points[0])
+    end, end_along = project_point_to_boundary(poly, points[-1])
+    cumulative = boundary_cumulative_lengths(poly)
+    total = cumulative[-1] if cumulative else 0.0
+    if total > 0:
+        forward = (end_along - start_along) % total
+        backward = (start_along - end_along) % total
+        if backward < forward:
+            return boundary_polyline_between(poly, end_along, end_along + backward)
+        return boundary_polyline_between(poly, start_along, start_along + forward)
     return [start, end]
 
 def constrain_polyline_to_polygon(poly: List[Point], points: List[Point]) -> List[Point]:
@@ -538,6 +561,19 @@ def constrain_polyline_to_polygon(poly: List[Point], points: List[Point]) -> Lis
         constrained[0], _ = project_point_to_boundary(poly, constrained[0])
         constrained[-1], _ = project_point_to_boundary(poly, constrained[-1])
     return constrained
+
+def simplify_polyline(points: List[Point], min_spacing: float) -> List[Point]:
+    if len(points) <= 2:
+        return points[:]
+    simplified = [points[0]]
+    for p in points[1:-1]:
+        if distance(simplified[-1], p) >= min_spacing:
+            simplified.append(p)
+    if distance(simplified[-1], points[-1]) > 0.02:
+        simplified.append(points[-1])
+    else:
+        simplified[-1] = points[-1]
+    return simplified
 
 def extend_curve_to_boundary(boundary: List[Point], points: List[Point]) -> List[Point]:
     if len(points) < 2:
@@ -557,8 +593,12 @@ def extend_curve_to_boundary(boundary: List[Point], points: List[Point]) -> List
     return extended
 
 def curve_points_for_offset(boundary: List[Point], curve: List[Point], start: Point, end: Point, offset_m: float) -> List[Point]:
-    points = curve_profile_points(curve, start, end, offset_m, 4.0)
-    return constrain_polyline_to_polygon(boundary, clip_polyline_to_polygon(boundary, extend_curve_to_boundary(boundary, points)))
+    points = curve_profile_points(curve, start, end, offset_m, 8.0)
+    clipped = clip_polyline_to_polygon(boundary, extend_curve_to_boundary(boundary, points))
+    return constrain_polyline_to_polygon(boundary, clipped)
+
+def curve_points_for_offset_area_search(curve: List[Point], start: Point, end: Point, offset_m: float) -> List[Point]:
+    return curve_profile_points(curve, start, end, offset_m, 12.0)
 
 def curve_strip_area(base_curve: List[Point], curve_points: List[Point]) -> float:
     if len(base_curve) < 2 or len(curve_points) < 2:
@@ -572,14 +612,14 @@ def find_curve_offset_for_area(boundary: List[Point], base_curve: List[Point], c
     hi = max(1.0, target_area / max(distance(start, end), 1.0))
     max_hi = max(diag * 3.0, hi)
     while hi < max_hi:
-        area = curve_strip_area(base_curve, curve_points_for_offset(boundary, curve, start, end, hi))
+        area = curve_strip_area(base_curve, curve_points_for_offset_area_search(curve, start, end, hi))
         if area >= target_area:
             break
         hi *= 1.8
     lo = 0.0
-    for _ in range(50):
+    for _ in range(22):
         mid = (lo + hi) / 2
-        area = curve_strip_area(base_curve, curve_points_for_offset(boundary, curve, start, end, mid))
+        area = curve_strip_area(base_curve, curve_points_for_offset_area_search(curve, start, end, mid))
         if area < target_area:
             lo = mid
         else:
