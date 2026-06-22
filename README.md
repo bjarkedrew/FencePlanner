@@ -4,7 +4,7 @@ AgOpenGPS Fence Planner er et Windows-program til at planlaegge midlertidige heg
 
 Programmet er lavet til praktisk markarbejde: lav planen paa computeren med satellitkort og markfiler, gem hegnslinjerne, og brug derefter KOR-fanen eller mobilen som guide ude i marken.
 
-Aktuel programversion: `v1.0.17`
+Aktuel programversion: `v1.0.18`
 
 ## Kort Fortalt
 
@@ -18,6 +18,7 @@ Aktuel programversion: `v1.0.17`
 - Gemmer hegnsplaner, saa de kan indlaeses igen senere
 - Skriver `TrackLines.txt`, saa linjer kan bruges i AgOpenGPS
 - Har KOR-fane til GPS/simpleRTK2B via NMEA/COM-port
+- Har NTRIP/RTK-felter til simpleRTK-korrektioner paa KOR-fanen
 - Kan lave midlertidigt HTTPS-link og QR-kode til den aktuelle mark
 - Har automatisk opdateringsknap under fanen `Program`
 - Tjekker automatisk ved opstart om en ny GitHub release er tilgaengelig

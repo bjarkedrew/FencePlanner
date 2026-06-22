@@ -1,15 +1,19 @@
-from PySide6.QtCore import QThread, Signal, Qt, QTimer
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import QPointF, QRectF, QThread, Signal, Qt, QTimer
+from PySide6.QtGui import QBrush, QColor, QPainter, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import *
+import base64
 import io
 import json
 import os
+import queue
 import re
 import serial
 import serial.tools.list_ports
+import socket
 import shutil
 import subprocess
 import sys
+import time
 import urllib.request
 import webbrowser
 from pathlib import Path
@@ -50,21 +54,35 @@ from .version import APP_TITLE, APP_VERSION
 class GpsReader(QThread):
     fix = Signal(object)
     error = Signal(str)
+    gga = Signal(str)
 
     def __init__(self, port, baud):
         super().__init__()
         self.port = port
         self.baud = baud
         self.running = True
+        self.corrections = queue.Queue()
+
+    def write_correction(self, data):
+        if data:
+            self.corrections.put(data)
 
     def run(self):
         last = None
         try:
             with serial.Serial(self.port, self.baud, timeout=1) as ser:
                 while self.running:
+                    while True:
+                        try:
+                            correction = self.corrections.get_nowait()
+                        except queue.Empty:
+                            break
+                        ser.write(correction)
                     line = ser.readline().decode("ascii", errors="ignore").strip()
                     if not line:
                         continue
+                    if line.startswith("$GPGGA") or line.startswith("$GNGGA"):
+                        self.gga.emit(line)
                     last = parse_nmea_line(line, last)
                     if last:
                         self.fix.emit(last)
@@ -73,6 +91,132 @@ class GpsReader(QThread):
 
     def stop(self):
         self.running = False
+
+
+class NtripClient(QThread):
+    data = Signal(bytes)
+    status = Signal(str)
+    error = Signal(str)
+
+    def __init__(self, host, port, mountpoint, username, password):
+        super().__init__()
+        self.host = host.strip()
+        self.port = int(port)
+        self.mountpoint = mountpoint.strip().lstrip("/")
+        self.username = username.strip()
+        self.password = password
+        self.running = True
+        self.last_gga = ""
+
+    def set_gga(self, gga):
+        self.last_gga = gga.strip()
+
+    def stop(self):
+        self.running = False
+
+    def run(self):
+        sock = None
+        try:
+            auth = base64.b64encode(f"{self.username}:{self.password}".encode("ascii", errors="ignore")).decode("ascii")
+            request = (
+                f"GET /{self.mountpoint} HTTP/1.0\r\n"
+                f"Host: {self.host}\r\n"
+                "Ntrip-Version: Ntrip/2.0\r\n"
+                "User-Agent: NTRIP FencePlanner/1.0\r\n"
+                f"Authorization: Basic {auth}\r\n"
+                "\r\n"
+            )
+            sock = socket.create_connection((self.host, self.port), timeout=12)
+            sock.settimeout(1.0)
+            sock.sendall(request.encode("ascii"))
+            header = b""
+            while b"\r\n\r\n" not in header and len(header) < 4096:
+                header += sock.recv(1)
+            if b"200" not in header.split(b"\r\n", 1)[0] and b"ICY 200" not in header:
+                raise RuntimeError(header.decode("latin1", errors="ignore").strip() or "NTRIP afvist")
+            self.status.emit("NTRIP: forbundet")
+            last_gga_sent = 0.0
+            while self.running:
+                now = time.time()
+                if self.last_gga and now - last_gga_sent > 5:
+                    sock.sendall((self.last_gga + "\r\n").encode("ascii", errors="ignore"))
+                    last_gga_sent = now
+                try:
+                    chunk = sock.recv(4096)
+                    if chunk:
+                        self.data.emit(chunk)
+                    else:
+                        raise RuntimeError("NTRIP-forbindelsen lukkede.")
+                except socket.timeout:
+                    continue
+        except Exception as e:
+            self.error.emit(str(e))
+        finally:
+            if sock:
+                try:
+                    sock.close()
+                except OSError:
+                    pass
+
+
+class DriveGuideWidget(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.offset_m = None
+        self.setMinimumHeight(180)
+
+    def set_offset(self, offset_m):
+        self.offset_m = offset_m
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        rect = self.rect()
+        painter.fillRect(rect, QColor("#101a13"))
+        center_x = rect.width() / 2
+        top = 70
+        bottom = rect.height() - 22
+
+        painter.setPen(QPen(QColor("#dbe9c4"), 3))
+        painter.drawLine(center_x, top, center_x, bottom)
+        painter.drawText(12, 24, "Lightbar")
+
+        max_offset = 2.0
+        offset = max(-max_offset, min(max_offset, self.offset_m or 0.0))
+        active = int(round(abs(offset) / max_offset * 5))
+        for i in range(1, 6):
+            width = 22 + i * 7
+            left_rect = QRectF(center_x - 18 - i * 34, 34, width, 22)
+            right_rect = QRectF(center_x + 18 + (i - 1) * 34, 34, width, 22)
+            left_on = offset > 0 and i <= active
+            right_on = offset < 0 and i <= active
+            painter.setBrush(QBrush(QColor("#ffcb3d" if left_on else "#33402f")))
+            painter.setPen(Qt.NoPen)
+            painter.drawRoundedRect(left_rect, 4, 4)
+            painter.setBrush(QBrush(QColor("#ffcb3d" if right_on else "#33402f")))
+            painter.drawRoundedRect(right_rect, 4, 4)
+
+        painter.setPen(QPen(QColor("#8fa681"), 1))
+        painter.drawText(center_x - 55, 55, "MERE VENSTRE")
+        painter.drawText(center_x + 20, 55, "MERE HOJRE")
+
+        arrow_x = center_x - max(-70, min(70, offset * 35))
+        painter.setBrush(QBrush(QColor("#42d0ff")))
+        painter.setPen(QPen(QColor("#ffffff"), 2))
+        arrow = QPolygonF([
+            QPointF(arrow_x, top + 16),
+            QPointF(arrow_x - 16, top + 52),
+            QPointF(arrow_x - 6, top + 46),
+            QPointF(arrow_x - 6, bottom - 12),
+            QPointF(arrow_x + 6, bottom - 12),
+            QPointF(arrow_x + 6, top + 46),
+            QPointF(arrow_x + 16, top + 52),
+        ])
+        painter.drawPolygon(arrow)
+        painter.setPen(QPen(QColor("#ffffff"), 1))
+        text = "Ingen GPS" if self.offset_m is None else f"{abs(self.offset_m):.2f} m"
+        painter.drawText(12, rect.height() - 10, text)
 
 
 class MobileGuideStarter(QThread):
@@ -150,6 +294,7 @@ class MainWindow(QMainWindow):
         self.fan_points = {"A1": None, "B1": None, "A2": None, "B2": None}
         self.transform = None
         self.gps_thread = None
+        self.ntrip_thread = None
         self.gps_local = None
         self.sync_server = None
         self.qr_server_process = None
@@ -342,8 +487,13 @@ class MainWindow(QMainWindow):
     def build_drive_tab(self):
         w = QWidget()
         outer = QHBoxLayout(w)
+        drive_left = QVBoxLayout()
+        self.drive_guide = DriveGuideWidget()
         self.drive_map = MapCanvas()
-        outer.addWidget(self.drive_map, 4)
+        self.drive_map.setMinimumSize(620, 420)
+        drive_left.addWidget(self.drive_guide, 0)
+        drive_left.addWidget(self.drive_map, 1)
+        outer.addLayout(drive_left, 3)
 
         right = QVBoxLayout()
         self.port_combo = QComboBox()
@@ -355,6 +505,20 @@ class MainWindow(QMainWindow):
         btn_start.clicked.connect(self.start_gps)
         btn_stop = QPushButton("Stop GPS")
         btn_stop.clicked.connect(self.stop_gps)
+        self.ntrip_host = QLineEdit()
+        self.ntrip_host.setPlaceholderText("caster.example.dk")
+        self.ntrip_port = QLineEdit("2101")
+        self.ntrip_mount = QLineEdit()
+        self.ntrip_mount.setPlaceholderText("Mountpoint")
+        self.ntrip_user = QLineEdit()
+        self.ntrip_password = QLineEdit()
+        self.ntrip_password.setEchoMode(QLineEdit.Password)
+        btn_ntrip_start = QPushButton("Start NTRIP/RTK")
+        btn_ntrip_start.clicked.connect(self.start_ntrip)
+        btn_ntrip_stop = QPushButton("Stop NTRIP")
+        btn_ntrip_stop.clicked.connect(self.stop_ntrip)
+        self.rtk_status = QLabel("RTK/NTRIP: stoppet")
+        self.rtk_status.setWordWrap(True)
         self.fence_combo = QComboBox()
         self.fence_combo.currentIndexChanged.connect(self.update_drive_line_info)
         self.big_distance = QLabel("INGEN GPS")
@@ -368,6 +532,19 @@ class MainWindow(QMainWindow):
         right.addWidget(btn_ports)
         right.addWidget(btn_start)
         right.addWidget(btn_stop)
+        right.addWidget(QLabel("NTRIP caster"))
+        right.addWidget(self.ntrip_host)
+        right.addWidget(QLabel("Port"))
+        right.addWidget(self.ntrip_port)
+        right.addWidget(QLabel("Mountpoint"))
+        right.addWidget(self.ntrip_mount)
+        right.addWidget(QLabel("Bruger"))
+        right.addWidget(self.ntrip_user)
+        right.addWidget(QLabel("Kode"))
+        right.addWidget(self.ntrip_password)
+        right.addWidget(btn_ntrip_start)
+        right.addWidget(btn_ntrip_stop)
+        right.addWidget(self.rtk_status)
         right.addWidget(QLabel("Valgt hegnslinje"))
         right.addWidget(self.fence_combo)
         right.addWidget(QLabel("Afstand til linje"))
@@ -945,10 +1122,14 @@ finally {
                 xt = signed_cross_track_to_fence(self.gps_local, fence)
                 side = "VENSTRE" if xt > 0 else "HOJRE"
                 self.big_distance.setText(f"{abs(xt):.2f} m {side}")
+                if hasattr(self, "drive_guide"):
+                    self.drive_guide.set_offset(xt)
         else:
             lines += ["", "Ingen hegnslinje valgt."]
             if self.gps_thread:
                 self.big_distance.setText("INGEN LINJE")
+            if hasattr(self, "drive_guide"):
+                self.drive_guide.set_offset(None)
 
         self.drive_info.setPlainText("\n".join(lines))
 
@@ -1444,15 +1625,64 @@ finally {
             return
         self.gps_thread = GpsReader(port, int(self.baud_combo.currentText()))
         self.gps_thread.fix.connect(self.on_gps_fix)
+        self.gps_thread.gga.connect(self.on_gps_gga)
         self.gps_thread.error.connect(lambda e: self.drive_info.setPlainText("GPS fejl: " + e))
         self.gps_thread.start()
 
     def stop_gps(self):
+        self.stop_ntrip()
         if self.gps_thread:
             self.gps_thread.stop()
             self.gps_thread.wait(1500)
             self.gps_thread = None
             self.big_distance.setText("STOPPET")
+            if hasattr(self, "drive_guide"):
+                self.drive_guide.set_offset(None)
+
+    def start_ntrip(self):
+        if not self.gps_thread:
+            QMessageBox.warning(self, "Start GPS foerst", "Start GPS/COM-port foerst, saa NTRIP kan sende RTCM til simpleRTK.")
+            return
+        host = self.ntrip_host.text().strip()
+        mount = self.ntrip_mount.text().strip()
+        user = self.ntrip_user.text().strip()
+        password = self.ntrip_password.text()
+        if not host or not mount:
+            QMessageBox.warning(self, "Mangler NTRIP", "Udfyld caster og mountpoint.")
+            return
+        try:
+            port = int(self.ntrip_port.text().strip() or "2101")
+        except ValueError:
+            QMessageBox.warning(self, "NTRIP port", "Port skal vaere et tal.")
+            return
+        self.stop_ntrip()
+        self.ntrip_thread = NtripClient(host, port, mount, user, password)
+        self.ntrip_thread.data.connect(self.on_ntrip_data)
+        self.ntrip_thread.status.connect(self.rtk_status.setText)
+        self.ntrip_thread.error.connect(self.on_ntrip_error)
+        self.ntrip_thread.start()
+        self.rtk_status.setText("NTRIP: forbinder...")
+
+    def stop_ntrip(self):
+        if self.ntrip_thread:
+            self.ntrip_thread.stop()
+            self.ntrip_thread.wait(1500)
+            self.ntrip_thread = None
+        if hasattr(self, "rtk_status"):
+            self.rtk_status.setText("RTK/NTRIP: stoppet")
+
+    def on_ntrip_data(self, data):
+        if self.gps_thread:
+            self.gps_thread.write_correction(data)
+
+    def on_ntrip_error(self, message):
+        if hasattr(self, "rtk_status"):
+            self.rtk_status.setText("NTRIP fejl")
+        QMessageBox.warning(self, "NTRIP fejl", message)
+
+    def on_gps_gga(self, gga):
+        if self.ntrip_thread:
+            self.ntrip_thread.set_gga(gga)
 
     def closeEvent(self, event):
         if self.mobile_tunnel_process and self.mobile_tunnel_process.poll() is None:
@@ -1482,6 +1712,8 @@ finally {
             xt = signed_cross_track_to_fence(self.gps_local, f)
             side = "VENSTRE" if xt > 0 else "HØJRE"
             self.big_distance.setText(f"{abs(xt):.2f} m {side}")
+            if hasattr(self, "drive_guide"):
+                self.drive_guide.set_offset(xt)
             lines.append(f"Valgt: {f.name}")
             lines.append(f"Laengde: {f.length_m:.1f} m")
             lines.append(f"Paele: {len(stake_points_on_fence(f, self.stake_spacing()))} stk ved {self.stake_spacing_label()}")

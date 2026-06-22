@@ -2,7 +2,7 @@
 
 Windows-program til planlaegning af rotationszoner og hegnslinjer til AgOpenGPS.
 
-Aktuel programversion: `v1.0.17`
+Aktuel programversion: `v1.0.18`
 
 ## Funktioner
 
@@ -24,6 +24,7 @@ Aktuel programversion: `v1.0.17`
 - Kan gemme og indlaese hegnsplaner igen senere
 - Kan gemme som ny AgOpenGPS-mark og skrive `TrackLines.txt`
 - Har KOR-fane med simpleRTK2B/NMEA GPS via COM-port
+- Har NTRIP/RTK-felter til simpleRTK-korrektioner paa KOR-fanen
 - Har Mobil QR med midlertidigt HTTPS-link til den aktuelle mark/hegnsplan
 - Har automatisk opdateringsknap under fanen `Program`
 - Tjekker automatisk ved opstart om nyeste GitHub release er nyere

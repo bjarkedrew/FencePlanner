@@ -461,6 +461,84 @@ def ray_boundary_hit(boundary: List[Point], origin: Point, direction_x: float, d
                 best = (t, hit)
     return best[1] if best else None
 
+def point_in_polygon(poly: List[Point], p: Point) -> bool:
+    inside = False
+    j = len(poly) - 1
+    for i in range(len(poly)):
+        pi = poly[i]
+        pj = poly[j]
+        if ((pi.y > p.y) != (pj.y > p.y)):
+            x_at_y = (pj.x - pi.x) * (p.y - pi.y) / max(pj.y - pi.y, 1e-12) + pi.x
+            if p.x < x_at_y:
+                inside = not inside
+        j = i
+    if inside:
+        return True
+    nearest, _ = project_point_to_boundary(poly, p)
+    return distance(nearest, p) < 1e-5
+
+def segment_boundary_t_values(boundary: List[Point], a: Point, b: Point):
+    values = [0.0, 1.0]
+    rx, ry = b.x - a.x, b.y - a.y
+    for i, p in enumerate(boundary):
+        q = boundary[(i + 1) % len(boundary)]
+        sx, sy = q.x - p.x, q.y - p.y
+        denom = rx * sy - ry * sx
+        if abs(denom) < 1e-10:
+            continue
+        px, py = p.x - a.x, p.y - a.y
+        t = (px * sy - py * sx) / denom
+        u = (px * ry - py * rx) / denom
+        if -1e-8 <= t <= 1 + 1e-8 and -1e-8 <= u <= 1 + 1e-8:
+            values.append(max(0.0, min(1.0, t)))
+    values = sorted(values)
+    unique = []
+    for value in values:
+        if not unique or abs(value - unique[-1]) > 1e-6:
+            unique.append(value)
+    return unique
+
+def clip_polyline_to_polygon(poly: List[Point], points: List[Point]) -> List[Point]:
+    if len(points) < 2:
+        return points[:]
+    clipped = []
+    for i in range(len(points) - 1):
+        a, b = points[i], points[i + 1]
+        values = segment_boundary_t_values(poly, a, b)
+        for j in range(len(values) - 1):
+            t0, t1 = values[j], values[j + 1]
+            if t1 - t0 < 1e-8:
+                continue
+            mid = lerp_point(a, b, (t0 + t1) / 2)
+            if point_in_polygon(poly, mid):
+                p0 = lerp_point(a, b, t0)
+                p1 = lerp_point(a, b, t1)
+                if not clipped or distance(clipped[-1], p0) > 0.02:
+                    clipped.append(p0)
+                if distance(clipped[-1], p1) > 0.02:
+                    clipped.append(p1)
+    if len(clipped) >= 2:
+        return clipped
+    start, _ = project_point_to_boundary(poly, points[0])
+    end, _ = project_point_to_boundary(poly, points[-1])
+    return [start, end]
+
+def constrain_polyline_to_polygon(poly: List[Point], points: List[Point]) -> List[Point]:
+    if not points:
+        return []
+    constrained = []
+    for p in points:
+        if point_in_polygon(poly, p):
+            q = p
+        else:
+            q, _ = project_point_to_boundary(poly, p)
+        if not constrained or distance(constrained[-1], q) > 0.02:
+            constrained.append(q)
+    if len(constrained) >= 2:
+        constrained[0], _ = project_point_to_boundary(poly, constrained[0])
+        constrained[-1], _ = project_point_to_boundary(poly, constrained[-1])
+    return constrained
+
 def extend_curve_to_boundary(boundary: List[Point], points: List[Point]) -> List[Point]:
     if len(points) < 2:
         return points[:]
@@ -480,7 +558,7 @@ def extend_curve_to_boundary(boundary: List[Point], points: List[Point]) -> List
 
 def curve_points_for_offset(boundary: List[Point], curve: List[Point], start: Point, end: Point, offset_m: float) -> List[Point]:
     points = curve_profile_points(curve, start, end, offset_m, 4.0)
-    return extend_curve_to_boundary(boundary, points)
+    return constrain_polyline_to_polygon(boundary, clip_polyline_to_polygon(boundary, extend_curve_to_boundary(boundary, points)))
 
 def curve_strip_area(base_curve: List[Point], curve_points: List[Point]) -> float:
     if len(base_curve) < 2 or len(curve_points) < 2:
