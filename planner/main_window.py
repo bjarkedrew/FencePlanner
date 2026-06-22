@@ -1,7 +1,8 @@
-from PySide6.QtCore import QThread, Signal, Qt
+from PySide6.QtCore import QThread, Signal, Qt, QTimer
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import *
 import io
+import json
 import os
 import re
 import serial
@@ -29,6 +30,7 @@ from .agopen import (
 )
 from .cloud_export import export_mobile_cloud
 from .geometry import (
+    generate_boundary_curve_fences,
     generate_equal_area_fences,
     generate_fan_between_guide_lines,
     polygon_area,
@@ -156,6 +158,7 @@ class MainWindow(QMainWindow):
         self.cloud_sync_settings = load_sync_settings()
         self.setup_ui()
         self.refresh_fields()
+        QTimer.singleShot(1800, self.check_for_updates_on_startup)
 
     def setup_ui(self):
         self.tabs = QTabWidget()
@@ -191,7 +194,7 @@ class MainWindow(QMainWindow):
 
         right = QVBoxLayout()
         self.zone_mode_combo = QComboBox()
-        self.zone_mode_combo.addItems(["Parallel", "Vifte"])
+        self.zone_mode_combo.addItems(["Parallel", "Vifte", "Kurve"])
         self.zone_mode_combo.currentTextChanged.connect(self.on_zone_mode_changed)
 
         self.zone_count_spin = QSpinBox()
@@ -272,9 +275,6 @@ class MainWindow(QMainWindow):
         controls_layout.addLayout(zone_count_row)
         controls_layout.addWidget(QLabel("Pæleafstand"))
         controls_layout.addWidget(self.stake_spacing_combo)
-        controls_layout.addWidget(btn_ab)
-        controls_layout.addWidget(btn_fan)
-        controls_layout.addWidget(btn_gen)
         controls_layout.addWidget(btn_save_plan)
         controls_layout.addWidget(btn_load_plan)
         controls_layout.addWidget(btn_drive_field)
@@ -304,7 +304,34 @@ class MainWindow(QMainWindow):
 
     def on_zone_mode_changed(self, *_):
         self.fan_gap_spin.setEnabled(self.zone_mode() == "Vifte")
-        self.regenerate_live()
+        self.start_point_selection(reset_existing=True)
+
+    def start_point_selection(self, reset_existing=False):
+        if not self.field:
+            return
+        if reset_existing:
+            self.fences = []
+            self.fold_areas = []
+            self.a = self.b = None
+            self.clear_fan_points()
+        if self.zone_mode() == "Vifte":
+            self.await_ab = False
+            self.await_fan = True
+            self.map.draw(self.field.boundary, self.fences, None, None)
+            self.drive_map.draw(self.field.boundary, self.fences, None, None, self.gps_local)
+            self.info.setPlainText(
+                "Vifte: klik A1 og B1 for foerste yderlinje.\n"
+                "Klik derefter A2 og B2 for anden yderlinje."
+            )
+        else:
+            self.await_ab = True
+            self.await_fan = False
+            self.map.draw(self.field.boundary, self.fences, self.a, self.b)
+            self.drive_map.draw(self.field.boundary, self.fences, self.a, self.b, self.gps_local)
+            if self.zone_mode() == "Kurve":
+                self.info.setPlainText("Kurve: klik A og B paa markgransen. Programmet snapper punkterne til boundaryen.")
+            else:
+                self.info.setPlainText("Parallel: klik A og derefter B paa kortet. Derefter kan punkterne traekkes rundt.")
 
     def change_map_quality(self, quality):
         if hasattr(self, "map"):
@@ -354,18 +381,13 @@ class MainWindow(QMainWindow):
     def build_about_tab(self):
         w = QWidget()
         layout = QVBoxLayout(w)
+        self.language_combo = QComboBox()
+        self.language_combo.addItems(["Dansk", "English"])
+        self.language_combo.currentTextChanged.connect(self.update_about_language)
         t = QTextEdit()
+        self.about_text = t
         t.setReadOnly(True)
-        t.setPlainText(
-            f"{APP_TITLE}\n\n"
-            "Programmet bruges til at importere AgOpenGPS/AgShare-marker, planlaegge zoner og hegnslinjer, "
-            "gemme hegnsplaner og bruge dem paa computer eller mobil.\n\n"
-            "Mobil QR starter en midlertidig HTTPS-webguide med den aktuelle mark, "
-            "saa telefonen kan bruges som GPS-guide ude i marken uden GitHub-upload.\n\n"
-            "RTK er ikke noedvendigt for almindelig mobilguide. simpleRTK2B kan bruges via NMEA/COM-port, "
-            "og centimeterpraecision kraever RTK-korrektioner.\n\n"
-            f"Installeret version: {APP_VERSION}"
-        )
+        self.update_about_language()
         btn_update = QPushButton("Hent/opdater nyeste version")
         btn_update.clicked.connect(self.update_program)
         btn_open_data = QPushButton("Aabn datamappe")
@@ -374,12 +396,39 @@ class MainWindow(QMainWindow):
         btn_reset.clicked.connect(self.reset_local_data)
         btn_uninstall = QPushButton("Afinstaller program")
         btn_uninstall.clicked.connect(self.uninstall_program)
+        layout.addWidget(QLabel("Sprog / Language"))
+        layout.addWidget(self.language_combo)
         layout.addWidget(t)
         layout.addWidget(btn_update)
         layout.addWidget(btn_open_data)
         layout.addWidget(btn_reset)
         layout.addWidget(btn_uninstall)
         return w
+
+    def update_about_language(self, *_):
+        if not hasattr(self, "about_text"):
+            return
+        if getattr(self, "language_combo", None) and self.language_combo.currentText() == "English":
+            self.about_text.setPlainText(
+                f"{APP_TITLE}\n\n"
+                "Fence Planner imports AgOpenGPS/AgShare fields, plans zones and fence lines, "
+                "saves fence plans, and can guide work from the desktop or a phone.\n\n"
+                "Mobile QR starts a temporary HTTPS web guide for the current field without GitHub upload.\n\n"
+                "RTK is not required for the normal mobile guide. simpleRTK2B can be used through NMEA/COM, "
+                "and centimeter precision normally requires RTK corrections.\n\n"
+                f"Installed version: {APP_VERSION}"
+            )
+        else:
+            self.about_text.setPlainText(
+                f"{APP_TITLE}\n\n"
+                "Programmet bruges til at importere AgOpenGPS/AgShare-marker, planlaegge zoner og hegnslinjer, "
+                "gemme hegnsplaner og bruge dem paa computer eller mobil.\n\n"
+                "Mobil QR starter en midlertidig HTTPS-webguide med den aktuelle mark, "
+                "saa telefonen kan bruges som GPS-guide ude i marken uden GitHub-upload.\n\n"
+                "RTK er ikke noedvendigt for almindelig mobilguide. simpleRTK2B kan bruges via NMEA/COM-port, "
+                "og centimeterpraecision kraever RTK-korrektioner.\n\n"
+                f"Installeret version: {APP_VERSION}"
+            )
 
     def update_program(self):
         reply = QMessageBox.question(
@@ -391,7 +440,9 @@ class MainWindow(QMainWindow):
         )
         if reply != QMessageBox.Yes:
             return
+        self.start_auto_update()
 
+    def start_auto_update(self):
         script = self.write_auto_update_script()
         subprocess.Popen(
             [
@@ -405,6 +456,36 @@ class MainWindow(QMainWindow):
             creationflags=subprocess.CREATE_NEW_CONSOLE if hasattr(subprocess, "CREATE_NEW_CONSOLE") else 0,
         )
         QApplication.quit()
+
+    def check_for_updates_on_startup(self):
+        try:
+            with urllib.request.urlopen("https://api.github.com/repos/bjarkedrew/FencePlanner/releases/latest", timeout=4) as response:
+                data = json.loads(response.read().decode("utf-8", errors="ignore"))
+            latest = str(data.get("tag_name", "")).strip()
+            if latest and self.version_is_newer(latest, APP_VERSION):
+                reply = QMessageBox.question(
+                    self,
+                    "Ny version tilgaengelig",
+                    f"Der findes en nyere version: {latest}\n\n"
+                    f"Du har: {APP_VERSION}\n\n"
+                    "Vil du hente og installere den nu?",
+                )
+                if reply == QMessageBox.Yes:
+                    self.start_auto_update()
+        except Exception:
+            return
+
+    def version_is_newer(self, latest, current):
+        def parts(value):
+            value = str(value).strip().lstrip("vV")
+            nums = []
+            for part in value.split("."):
+                match = re.match(r"(\d+)", part)
+                nums.append(int(match.group(1)) if match else 0)
+            while len(nums) < 3:
+                nums.append(0)
+            return nums[:3]
+        return parts(latest) > parts(current)
 
     def write_auto_update_script(self):
         work = Path(os.environ.get("TEMP", str(Path.home()))) / "FencePlannerAutoUpdate"
@@ -639,6 +720,7 @@ finally {
             )
             self.refresh_fence_combo()
             self.update_drive_line_info()
+            self.start_point_selection(reset_existing=False)
         except Exception as e:
             QMessageBox.critical(self, "Fejl", str(e))
 
@@ -766,6 +848,8 @@ finally {
     def generate(self, silent=False):
         if self.zone_mode() == "Vifte":
             missing = not self.field or not self.has_fan_points()
+        elif self.zone_mode() == "Kurve":
+            missing = not self.field or not self.a or not self.b
         else:
             missing = not self.field or not self.a or not self.b
         if missing:
@@ -785,6 +869,15 @@ finally {
                 )
                 self.map.update_dynamic(self.fences, None, None, sync_handles=False, extra_points=self.fan_points)
                 self.drive_map.update_dynamic(self.fences, None, None, self.gps_local, sync_handles=True, extra_points=self.fan_points)
+            elif self.zone_mode() == "Kurve":
+                self.fences, self.fold_areas, self.a, self.b = generate_boundary_curve_fences(
+                    self.field.boundary,
+                    self.a,
+                    self.b,
+                    self.zone_count(),
+                )
+                self.map.update_dynamic(self.fences, self.a, self.b, sync_handles=True)
+                self.drive_map.update_dynamic(self.fences, self.a, self.b, self.gps_local, sync_handles=True)
             else:
                 self.fences, self.fold_areas = generate_equal_area_fences(self.field.boundary, self.a, self.b, self.zone_count())
                 self.map.update_dynamic(self.fences, self.a, self.b, sync_handles=False)

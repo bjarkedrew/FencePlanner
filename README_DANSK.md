@@ -2,7 +2,7 @@
 
 Windows-program til planlaegning af rotationszoner og hegnslinjer til AgOpenGPS.
 
-Aktuel programversion: `v1.0.13`
+Aktuel programversion: `v1.0.14`
 
 ## Funktioner
 
@@ -17,6 +17,7 @@ Aktuel programversion: `v1.0.13`
 - Opdaterer zoner, hektar og hegnslinjer live
 - Bruger `Antal zoner`, hvor fx 3 zoner giver 2 hegn
 - Kan lave parallelle zoner eller vifte-zoner mellem to yderlinjer
+- Kan lave kurve-linjer ud fra A/B-punkter paa markgransen
 - Vifte tager hoejde for A/B-raekkefoelgen og deler fra linje til linje
 - Har justerbar paeleafstand med 10/25/50 m som forvalg og mulighed for selv at skrive afstand
 - Viser antal paele pr. hegnslinje og samlet antal paele
@@ -25,6 +26,7 @@ Aktuel programversion: `v1.0.13`
 - Har KOR-fane med simpleRTK2B/NMEA GPS via COM-port
 - Har Mobil QR med midlertidigt HTTPS-link til den aktuelle mark/hegnsplan
 - Har automatisk opdateringsknap under fanen `Program`
+- Tjekker automatisk ved opstart om nyeste GitHub release er nyere
 
 ## QR-Sync Til Mobil
 

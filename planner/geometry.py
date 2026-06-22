@@ -263,6 +263,115 @@ def line_intersection_point(a1: Point, b1: Point, a2: Point, b2: Point) -> Point
 def lerp_point(a: Point, b: Point, t: float) -> Point:
     return Point(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)
 
+def distance(a: Point, b: Point) -> float:
+    return hypot(b.x - a.x, b.y - a.y)
+
+def project_point_to_segment(p: Point, a: Point, b: Point):
+    dx, dy = b.x - a.x, b.y - a.y
+    length_sq = dx * dx + dy * dy
+    if length_sq < 1e-12:
+        return a, 0.0, distance(p, a)
+    t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / length_sq
+    t = max(0.0, min(1.0, t))
+    q = Point(a.x + dx * t, a.y + dy * t)
+    return q, t, distance(p, q)
+
+def boundary_cumulative_lengths(boundary: List[Point]):
+    lengths = [0.0]
+    total = 0.0
+    for i, p in enumerate(boundary):
+        q = boundary[(i + 1) % len(boundary)]
+        total += distance(p, q)
+        lengths.append(total)
+    return lengths
+
+def project_point_to_boundary(boundary: List[Point], p: Point):
+    best = None
+    cumulative = boundary_cumulative_lengths(boundary)
+    for i, a in enumerate(boundary):
+        b = boundary[(i + 1) % len(boundary)]
+        q, t, dist = project_point_to_segment(p, a, b)
+        along = cumulative[i] + distance(a, q)
+        if best is None or dist < best[2]:
+            best = (q, along, dist)
+    return best[0], best[1]
+
+def boundary_point_at(boundary: List[Point], along: float) -> Point:
+    cumulative = boundary_cumulative_lengths(boundary)
+    total = cumulative[-1]
+    if total <= 0:
+        return boundary[0]
+    along = along % total
+    for i in range(len(boundary)):
+        start = cumulative[i]
+        end = cumulative[i + 1]
+        if along <= end or i == len(boundary) - 1:
+            seg_len = max(end - start, 1e-12)
+            return lerp_point(boundary[i], boundary[(i + 1) % len(boundary)], (along - start) / seg_len)
+    return boundary[-1]
+
+def boundary_polyline_between(boundary: List[Point], start_along: float, end_along: float):
+    cumulative = boundary_cumulative_lengths(boundary)
+    total = cumulative[-1]
+    if total <= 0:
+        return []
+    if end_along < start_along:
+        end_along += total
+    points = [boundary_point_at(boundary, start_along)]
+    for i, length in enumerate(cumulative[1:-1], 1):
+        candidate = length
+        while candidate < start_along:
+            candidate += total
+        if start_along + 1e-9 < candidate < end_along - 1e-9:
+            points.append(boundary[i])
+    points.append(boundary_point_at(boundary, end_along))
+    return points
+
+def polyline_length(points: List[Point]) -> float:
+    return sum(distance(points[i], points[i + 1]) for i in range(len(points) - 1))
+
+def point_on_polyline(points: List[Point], along: float) -> Point:
+    if not points:
+        raise ValueError("Kurvelinjen mangler punkter.")
+    if len(points) == 1:
+        return points[0]
+    remaining = max(0.0, along)
+    for i in range(len(points) - 1):
+        seg_len = distance(points[i], points[i + 1])
+        if remaining <= seg_len or i == len(points) - 2:
+            return lerp_point(points[i], points[i + 1], 0.0 if seg_len <= 1e-12 else remaining / seg_len)
+        remaining -= seg_len
+    return points[-1]
+
+def generate_boundary_curve_fences(boundary, a, b, fold_count):
+    if fold_count < 2:
+        raise ValueError("Antal zoner skal vaere mindst 2")
+    if len(boundary) < 3:
+        raise ValueError("Markgransen mangler punkter.")
+    boundary = ensure_ccw(boundary)
+    start, start_along = project_point_to_boundary(boundary, a)
+    end, end_along = project_point_to_boundary(boundary, b)
+    cumulative = boundary_cumulative_lengths(boundary)
+    total = cumulative[-1]
+    forward = (end_along - start_along) % total
+    backward = (start_along - end_along) % total
+    if min(forward, backward) < 0.01:
+        raise ValueError("A og B paa kurven ligger for taet paa hinanden.")
+    if backward < forward:
+        start, end = end, start
+        start_along, end_along = end_along, start_along
+        forward = backward
+    curve = boundary_polyline_between(boundary, start_along, start_along + forward)
+    length = polyline_length(curve)
+    if length < 0.01:
+        raise ValueError("Kurvestraekningen er for kort.")
+    fences = []
+    for idx in range(1, fold_count):
+        p = point_on_polyline(curve, length * idx / fold_count)
+        fences.append(FenceLine(f"Hegn {idx}", start, p, atan2(p.x - start.x, p.y - start.y), distance(start, p)))
+    fold_areas = [polygon_area(boundary) / fold_count for _ in range(fold_count)]
+    return fences, fold_areas, start, end
+
 def guide_line_equation(a: Point, b: Point):
     dx, dy = b.x - a.x, b.y - a.y
     length = hypot(dx, dy)
