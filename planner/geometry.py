@@ -350,6 +350,20 @@ def resample_polyline(points: List[Point], spacing: float = 8.0) -> List[Point]:
     count = max(2, int(length / max(spacing, 0.5)) + 1)
     return [point_on_polyline(points, length * i / (count - 1)) for i in range(count)]
 
+def chaikin_smooth_polyline(points: List[Point], passes: int = 2) -> List[Point]:
+    if len(points) < 3 or passes <= 0:
+        return points[:]
+    smoothed = points[:]
+    for _ in range(passes):
+        next_points = [smoothed[0]]
+        for i in range(len(smoothed) - 1):
+            p, q = smoothed[i], smoothed[i + 1]
+            next_points.append(Point(p.x * 0.75 + q.x * 0.25, p.y * 0.75 + q.y * 0.25))
+            next_points.append(Point(p.x * 0.25 + q.x * 0.75, p.y * 0.25 + q.y * 0.75))
+        next_points.append(smoothed[-1])
+        smoothed = next_points
+    return smoothed
+
 def offset_polyline_left(points: List[Point], offset_m: float) -> List[Point]:
     if len(points) < 2:
         return points[:]
@@ -370,6 +384,66 @@ def offset_polyline_left(points: List[Point], offset_m: float) -> List[Point]:
         out.append(Point(p.x + nx * offset_m, p.y + ny * offset_m))
     return out
 
+def smooth_values(values: List[float], passes: int = 4) -> List[float]:
+    if len(values) < 3:
+        return values[:]
+    smoothed = values[:]
+    for _ in range(max(0, passes)):
+        next_values = smoothed[:]
+        for i in range(1, len(smoothed) - 1):
+            next_values[i] = smoothed[i - 1] * 0.25 + smoothed[i] * 0.5 + smoothed[i + 1] * 0.25
+        smoothed = next_values
+    return smoothed
+
+def curve_profile_points(curve: List[Point], start: Point, end: Point, offset_m: float, spacing_m: float = 4.0) -> List[Point]:
+    chord_len = distance(start, end)
+    if chord_len < 0.01:
+        raise ValueError("A og B paa kurven ligger for taet paa hinanden.")
+    tx, ty = (end.x - start.x) / chord_len, (end.y - start.y) / chord_len
+    nx, ny = -ty, tx
+    sampled = resample_polyline(curve, spacing_m)
+    profile = []
+    for p in sampled:
+        sx = (p.x - start.x) * tx + (p.y - start.y) * ty
+        lateral = (p.x - start.x) * nx + (p.y - start.y) * ny
+        profile.append((max(0.0, min(chord_len, sx)), lateral))
+    profile.append((0.0, 0.0))
+    profile.append((chord_len, 0.0))
+    profile.sort(key=lambda item: item[0])
+
+    merged = []
+    for sx, lateral in profile:
+        if merged and abs(merged[-1][0] - sx) < 0.25:
+            prev_sx, prev_lat, prev_count = merged[-1]
+            count = prev_count + 1
+            merged[-1] = (prev_sx, (prev_lat * prev_count + lateral) / count, count)
+        else:
+            merged.append((sx, lateral, 1))
+    profile = [(sx, lateral) for sx, lateral, _ in merged]
+
+    count = max(2, int(chord_len / max(spacing_m, 0.5)) + 1)
+    values = []
+    j = 0
+    for i in range(count):
+        sx = chord_len * i / (count - 1)
+        while j < len(profile) - 2 and profile[j + 1][0] < sx:
+            j += 1
+        s0, n0 = profile[j]
+        s1, n1 = profile[min(j + 1, len(profile) - 1)]
+        t = 0.0 if abs(s1 - s0) < 1e-9 else (sx - s0) / (s1 - s0)
+        values.append(n0 + (n1 - n0) * max(0.0, min(1.0, t)))
+    values[0] = 0.0
+    values[-1] = 0.0
+    values = smooth_values(values, 6)
+    values[0] = 0.0
+    values[-1] = 0.0
+
+    return [
+        Point(start.x + tx * (chord_len * i / (count - 1)) + nx * (values[i] + offset_m),
+              start.y + ty * (chord_len * i / (count - 1)) + ny * (values[i] + offset_m))
+        for i in range(count)
+    ]
+
 def generate_boundary_curve_fences(boundary, a, b, fold_count):
     if fold_count < 2:
         raise ValueError("Antal zoner skal vaere mindst 2")
@@ -389,14 +463,14 @@ def generate_boundary_curve_fences(boundary, a, b, fold_count):
         start_along, end_along = end_along, start_along
         forward = backward
     curve = boundary_polyline_between(boundary, start_along, start_along + forward)
-    curve = resample_polyline(curve, 8.0)
+    curve = resample_polyline(chaikin_smooth_polyline(curve, 3), 4.0)
     length = polyline_length(curve)
     if length < 0.01:
         raise ValueError("Kurvestraekningen er for kort.")
     offset_step = polygon_area(boundary) / max(length, 0.01) / fold_count
     fences = []
     for idx in range(1, fold_count):
-        points = offset_polyline_left(curve, offset_step * idx)
+        points = curve_profile_points(curve, start, end, offset_step * idx, 4.0)
         line_length = polyline_length(points)
         start_p, end_p = points[0], points[-1]
         fences.append(FenceLine(
