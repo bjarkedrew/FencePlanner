@@ -2,7 +2,7 @@
 
 Windows-program til planlaegning af rotationszoner og hegnslinjer til AgOpenGPS.
 
-Aktuel programversion: `v1.0.16`
+Aktuel programversion: `v1.0.17`
 
 ## Funktioner
 

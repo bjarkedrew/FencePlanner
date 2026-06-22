@@ -444,6 +444,70 @@ def curve_profile_points(curve: List[Point], start: Point, end: Point, offset_m:
         for i in range(count)
     ]
 
+def ray_boundary_hit(boundary: List[Point], origin: Point, direction_x: float, direction_y: float, min_t: float = 0.0):
+    best = None
+    for i, a in enumerate(boundary):
+        b = boundary[(i + 1) % len(boundary)]
+        sx, sy = b.x - a.x, b.y - a.y
+        denom = direction_x * sy - direction_y * sx
+        if abs(denom) < 1e-10:
+            continue
+        ax, ay = a.x - origin.x, a.y - origin.y
+        t = (ax * sy - ay * sx) / denom
+        u = (ax * direction_y - ay * direction_x) / denom
+        if t >= min_t - 1e-8 and -1e-8 <= u <= 1 + 1e-8:
+            hit = Point(origin.x + direction_x * t, origin.y + direction_y * t)
+            if best is None or t < best[0]:
+                best = (t, hit)
+    return best[1] if best else None
+
+def extend_curve_to_boundary(boundary: List[Point], points: List[Point]) -> List[Point]:
+    if len(points) < 2:
+        return points[:]
+    extended = points[:]
+    first_dir_x = points[0].x - points[1].x
+    first_dir_y = points[0].y - points[1].y
+    first_hit = ray_boundary_hit(boundary, points[1], first_dir_x, first_dir_y, min_t=1.0)
+    if first_hit:
+        extended[0] = first_hit
+
+    last_dir_x = points[-1].x - points[-2].x
+    last_dir_y = points[-1].y - points[-2].y
+    last_hit = ray_boundary_hit(boundary, points[-2], last_dir_x, last_dir_y, min_t=1.0)
+    if last_hit:
+        extended[-1] = last_hit
+    return extended
+
+def curve_points_for_offset(boundary: List[Point], curve: List[Point], start: Point, end: Point, offset_m: float) -> List[Point]:
+    points = curve_profile_points(curve, start, end, offset_m, 4.0)
+    return extend_curve_to_boundary(boundary, points)
+
+def curve_strip_area(base_curve: List[Point], curve_points: List[Point]) -> float:
+    if len(base_curve) < 2 or len(curve_points) < 2:
+        return 0.0
+    return polygon_area(base_curve + list(reversed(curve_points)))
+
+def find_curve_offset_for_area(boundary: List[Point], base_curve: List[Point], curve: List[Point], start: Point, end: Point, target_area: float):
+    xs = [p.x for p in boundary]
+    ys = [p.y for p in boundary]
+    diag = hypot(max(xs) - min(xs), max(ys) - min(ys))
+    hi = max(1.0, target_area / max(distance(start, end), 1.0))
+    max_hi = max(diag * 3.0, hi)
+    while hi < max_hi:
+        area = curve_strip_area(base_curve, curve_points_for_offset(boundary, curve, start, end, hi))
+        if area >= target_area:
+            break
+        hi *= 1.8
+    lo = 0.0
+    for _ in range(50):
+        mid = (lo + hi) / 2
+        area = curve_strip_area(base_curve, curve_points_for_offset(boundary, curve, start, end, mid))
+        if area < target_area:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2
+
 def generate_boundary_curve_fences(boundary, a, b, fold_count):
     if fold_count < 2:
         raise ValueError("Antal zoner skal vaere mindst 2")
@@ -462,15 +526,19 @@ def generate_boundary_curve_fences(boundary, a, b, fold_count):
         start, end = end, start
         start_along, end_along = end_along, start_along
         forward = backward
-    curve = boundary_polyline_between(boundary, start_along, start_along + forward)
-    curve = resample_polyline(chaikin_smooth_polyline(curve, 3), 4.0)
+    base_curve = boundary_polyline_between(boundary, start_along, start_along + forward)
+    curve = resample_polyline(chaikin_smooth_polyline(base_curve, 3), 4.0)
     length = polyline_length(curve)
     if length < 0.01:
         raise ValueError("Kurvestraekningen er for kort.")
-    offset_step = polygon_area(boundary) / max(length, 0.01) / fold_count
+    total_area = polygon_area(boundary)
+    target = total_area / fold_count
     fences = []
+    cut_areas = []
     for idx in range(1, fold_count):
-        points = curve_profile_points(curve, start, end, offset_step * idx, 4.0)
+        offset = find_curve_offset_for_area(boundary, base_curve, curve, start, end, target * idx)
+        points = curve_points_for_offset(boundary, curve, start, end, offset)
+        cut_areas.append(curve_strip_area(base_curve, points))
         line_length = polyline_length(points)
         start_p, end_p = points[0], points[-1]
         fences.append(FenceLine(
@@ -481,7 +549,8 @@ def generate_boundary_curve_fences(boundary, a, b, fold_count):
             line_length,
             points,
         ))
-    fold_areas = [polygon_area(boundary) / fold_count for _ in range(fold_count)]
+    bounds = [0.0] + cut_areas + [total_area]
+    fold_areas = [max(0.0, bounds[i + 1] - bounds[i]) for i in range(fold_count)]
     return fences, fold_areas, start, end
 
 def guide_line_equation(a: Point, b: Point):
