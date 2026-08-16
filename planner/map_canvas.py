@@ -6,7 +6,6 @@ from PySide6.QtCore import QPoint, QPointF, QRectF, Qt, QUrl, Signal
 from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest
 from PySide6.QtWidgets import (
-    QGraphicsEllipseItem,
     QGraphicsItem,
     QGraphicsLineItem,
     QGraphicsObject,
@@ -90,6 +89,7 @@ class MapCanvas(QGraphicsView):
         self.static_items = []
         self.dynamic_items = []
         self.ab_handles = {}
+        self.gps_heading_deg = None
         self.suppress_handle_signal = False
         self.satellite_enabled = True
         self.panning = False
@@ -135,7 +135,7 @@ class MapCanvas(QGraphicsView):
             self.local_scale = 900 / max(max(xs) - min(xs), max(ys) - min(ys), 1)
         self.draw(boundary, [], None, None)
 
-    def draw(self, boundary=None, fences=None, a=None, b=None, gps=None):
+    def draw(self, boundary=None, fences=None, a=None, b=None, gps=None, gps_heading=None):
         self.scene.clear()
         self.tile_items = {}
         self.static_items = []
@@ -158,7 +158,7 @@ class MapCanvas(QGraphicsView):
             self.scene.addItem(item)
             self.static_items.append(item)
 
-        self.update_dynamic(fences, a, b, gps, sync_handles=True)
+        self.update_dynamic(fences, a, b, gps, gps_heading=gps_heading, sync_handles=True)
 
         if boundary_rect.isValid() and not boundary_rect.isEmpty():
             self.fit_rect = boundary_rect.adjusted(-180, -180, 180, 180)
@@ -177,9 +177,11 @@ class MapCanvas(QGraphicsView):
         self.minimum_view_scale = QGraphicsView.transform(self).m11()
         self.load_visible_tiles()
 
-    def update_dynamic(self, fences=None, a=None, b=None, gps=None, sync_handles=False, extra_points=None):
+    def update_dynamic(self, fences=None, a=None, b=None, gps=None, gps_heading=None, sync_handles=False, extra_points=None):
         fences = fences or []
         extra_points = extra_points or {}
+        if gps_heading is not None:
+            self.gps_heading_deg = gps_heading
         for item in self.dynamic_items:
             if item.scene() is self.scene:
                 self.scene.removeItem(item)
@@ -237,12 +239,21 @@ class MapCanvas(QGraphicsView):
 
         if gps:
             q = self.to_scene_point(gps)
-            el = QGraphicsEllipseItem(q.x() - 8, q.y() - 8, 16, 16)
-            el.setPen(QPen(QColor("#1b1b00"), 2))
-            el.setBrush(QBrush(QColor("#ffff00")))
-            el.setZValue(35)
-            self.scene.addItem(el)
-            self.dynamic_items.append(el)
+            heading = self.gps_heading_deg or 0.0
+            triangle = QGraphicsPolygonItem(QPolygonF([
+                QPointF(0, -20),
+                QPointF(-13, 16),
+                QPointF(0, 9),
+                QPointF(13, 16),
+            ]))
+            triangle.setPos(q)
+            triangle.setRotation(heading % 360.0)
+            triangle.setPen(QPen(QColor("#ffffff"), 2))
+            triangle.setBrush(QBrush(QColor("#42d0ff")))
+            triangle.setFlag(QGraphicsItem.ItemIgnoresTransformations)
+            triangle.setZValue(45)
+            self.scene.addItem(triangle)
+            self.dynamic_items.append(triangle)
 
     def to_scene_point(self, p):
         if self.transform:

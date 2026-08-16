@@ -473,6 +473,7 @@ class MainWindow(QMainWindow):
         self.last_gga = ""
         self.ntrip_bytes_received = 0
         self.gps_local = None
+        self.gps_heading_deg = None
         self.sync_server = None
         self.qr_server_process = None
         self.mobile_guide_thread = None
@@ -1935,6 +1936,7 @@ finally {
             if hasattr(self, "drive_guide"):
                 self.drive_guide.set_state(None)
             self.gps_local = None
+            self.gps_heading_deg = None
             self.update_drive_data_panel()
 
     def open_ntrip_dialog(self):
@@ -2028,6 +2030,7 @@ finally {
             lines.append("Ingen Field.kml, TASKDATA.XML eller AgShare ZIP/georeference fundet.")
         elif self.fences and self.fence_combo.currentIndex() >= 0:
             self.gps_local = self.transform.latlon_to_local(fix.lat, fix.lon)
+            self.gps_heading_deg = fix.track_deg
             f = self.selected_drive_fence()
             xt = signed_cross_track_to_fence(self.gps_local, f)
             side = "VENSTRE" if xt > 0 else "HØJRE"
@@ -2043,6 +2046,6 @@ finally {
             lines.append(f"Laengde: {f.length_m:.1f} m")
             lines.append(f"Paele: {len(stake_points_on_fence(f, self.stake_spacing()))} stk ved {self.stake_spacing_label()}")
             lines.append(f"Afstand til linje: {abs(xt):.2f} m {side}")
-            self.drive_map.update_dynamic(self.fences, self.a, self.b, self.gps_local, sync_handles=True)
+            self.drive_map.update_dynamic(self.fences, self.a, self.b, self.gps_local, gps_heading=self.gps_heading_deg, sync_handles=True)
         self.update_drive_data_panel(fix)
         self.drive_info.setPlainText("\n".join(lines))

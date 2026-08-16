@@ -51,6 +51,7 @@ Windows-program til planlægning af hegn, zoner og pælepunkter ud fra AgOpenGPS
 - KØR-fanen har nu GPS-lignende kørselsskærm med trekant, sporlinjer, linjeskift og markdata i siden
 - KØR-fanen har 460800 baud og laeser nu VTG/HDT/THS, saa AOG/ZED-F9P-konfigurationer passer bedre
 - NTRIP/RTK er flyttet til popup med `Hent mountpoints`, statuslog og bedre fejlbesked ved forkert mountpoint
+- Satellitkortet viser nu GPS-positionen som en tydelig trekant, der peger i koerselsretningen naar GPS-kurs findes
 - Programmet tjekker ved opstart om GitHub har en nyere release
 - Program/Om-fanen har nu sprogvalg mellem dansk og engelsk tekst
 - `Koer mark` skifter direkte til KØR-fanen med valgt mark og hegnslinjer
@@ -80,5 +81,5 @@ Læg dem i samme mappe og kør `Installer_fra_lokal_pakke.bat`.
 ## SHA256
 
 ```text
-59DB09D52A9DD126BC1B1005A0DD89CABDE4DEF1ACBC993CE98A5B60599F0B7C
+ADE0BE73A092D7DAE9A7EDB87B86EA93CEFBDAB0A4738ED8A7097384F8852F88
 ```

@@ -2,7 +2,7 @@
 
 Windows-program til planlaegning af rotationszoner og hegnslinjer til AgOpenGPS.
 
-Aktuel programversion: `v1.0.22`
+Aktuel programversion: `v1.0.23`
 
 ## Funktioner
 
@@ -28,6 +28,7 @@ Aktuel programversion: `v1.0.22`
 - Har GPS-lignende KOR-skaerm med lightbar, retningspil, sporvalg og markdata
 - Understoetter typiske AOG/ZED-F9P NMEA-saetninger som GGA, RMC, VTG og HDT/THS
 - NTRIP/RTK ligger i en popup med mountpoint-liste og tydelig forbindelseslog
+- Satellitkortet viser GPS-positionen som en tydelig trekant med koerselsretning
 - Har Mobil QR med midlertidigt HTTPS-link til den aktuelle mark/hegnsplan
 - Har automatisk opdateringsknap under fanen `Program`
 - Tjekker automatisk ved opstart om nyeste GitHub release er nyere
