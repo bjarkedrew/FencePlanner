@@ -4,6 +4,7 @@ from PySide6.QtWidgets import *
 import base64
 import io
 import json
+from math import atan2, cos, hypot, pi, sin
 import os
 import queue
 import re
@@ -38,6 +39,8 @@ from .geometry import (
     generate_equal_area_fences,
     generate_fan_between_guide_lines,
     polygon_area,
+    fence_points,
+    polyline_length,
     signed_cross_track_to_fence,
     stake_points_on_fence,
 )
@@ -163,60 +166,81 @@ class DriveGuideWidget(QWidget):
     def __init__(self):
         super().__init__()
         self.offset_m = None
-        self.setMinimumHeight(180)
+        self.heading_deg = None
+        self.line_bearing_deg = None
+        self.speed_kmh = 0.0
+        self.setMinimumHeight(260)
 
     def set_offset(self, offset_m):
         self.offset_m = offset_m
+        self.update()
+
+    def set_state(self, offset_m=None, heading_deg=None, line_bearing_deg=None, speed_kmh=0.0):
+        self.offset_m = offset_m
+        self.heading_deg = heading_deg
+        self.line_bearing_deg = line_bearing_deg
+        self.speed_kmh = speed_kmh or 0.0
         self.update()
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         rect = self.rect()
-        painter.fillRect(rect, QColor("#101a13"))
+        painter.fillRect(rect, QColor("#0f1711"))
         center_x = rect.width() / 2
-        top = 70
-        bottom = rect.height() - 22
-
-        painter.setPen(QPen(QColor("#dbe9c4"), 3))
-        painter.drawLine(center_x, top, center_x, bottom)
-        painter.drawText(12, 24, "Lightbar")
+        top = 76
+        bottom = rect.height() - 18
 
         max_offset = 2.0
         offset = max(-max_offset, min(max_offset, self.offset_m or 0.0))
-        active = int(round(abs(offset) / max_offset * 5))
-        for i in range(1, 6):
-            width = 22 + i * 7
-            left_rect = QRectF(center_x - 18 - i * 34, 34, width, 22)
-            right_rect = QRectF(center_x + 18 + (i - 1) * 34, 34, width, 22)
+        active = int(round(abs(offset) / max_offset * 7))
+        for i in range(1, 8):
+            width = 26
+            left_rect = QRectF(center_x - 16 - i * 32, 38, width, 24)
+            right_rect = QRectF(center_x + 16 + (i - 1) * 32, 38, width, 24)
             left_on = offset > 0 and i <= active
             right_on = offset < 0 and i <= active
-            painter.setBrush(QBrush(QColor("#ffcb3d" if left_on else "#33402f")))
+            painter.setBrush(QBrush(QColor("#ffcf40" if left_on else "#2f3c2c")))
             painter.setPen(Qt.NoPen)
             painter.drawRoundedRect(left_rect, 4, 4)
-            painter.setBrush(QBrush(QColor("#ffcb3d" if right_on else "#33402f")))
+            painter.setBrush(QBrush(QColor("#ffcf40" if right_on else "#2f3c2c")))
             painter.drawRoundedRect(right_rect, 4, 4)
+        painter.setBrush(QBrush(QColor("#70c744" if abs(offset) < 0.12 and self.offset_m is not None else "#365032")))
+        painter.drawRoundedRect(QRectF(center_x - 13, 35, 26, 30), 5, 5)
 
-        painter.setPen(QPen(QColor("#8fa681"), 1))
-        painter.drawText(center_x - 55, 55, "MERE VENSTRE")
-        painter.drawText(center_x + 20, 55, "MERE HOJRE")
+        lane_top = top + 12
+        lane_bottom = bottom - 8
+        lane_width = min(170, max(90, rect.width() * 0.22))
+        painter.setPen(QPen(QColor("#405743"), 2))
+        for frac in (-1.0, -0.5, 0.5, 1.0):
+            x = center_x + frac * lane_width
+            painter.drawLine(QPointF(x, lane_top), QPointF(x, lane_bottom))
+        painter.setPen(QPen(QColor("#dcecc5"), 4))
+        painter.drawLine(QPointF(center_x, lane_top), QPointF(center_x, lane_bottom))
+        painter.setPen(QPen(QColor("#73b64b"), 2))
+        painter.drawLine(QPointF(center_x - lane_width, lane_bottom), QPointF(center_x, lane_top))
+        painter.drawLine(QPointF(center_x + lane_width, lane_bottom), QPointF(center_x, lane_top))
 
         arrow_x = center_x - max(-70, min(70, offset * 35))
+        arrow_y = bottom - 46
+        heading = self.heading_deg if self.heading_deg is not None else self.line_bearing_deg
+        if heading is None:
+            heading = 0.0
+        angle = (heading % 360.0) * pi / 180.0
+        base = [
+            (0.0, -30.0),
+            (-18.0, 24.0),
+            (0.0, 13.0),
+            (18.0, 24.0),
+        ]
+        arrow = QPolygonF()
+        for x, y in base:
+            rx = x * cos(angle) - y * sin(angle)
+            ry = x * sin(angle) + y * cos(angle)
+            arrow.append(QPointF(arrow_x + rx, arrow_y + ry))
         painter.setBrush(QBrush(QColor("#42d0ff")))
         painter.setPen(QPen(QColor("#ffffff"), 2))
-        arrow = QPolygonF([
-            QPointF(arrow_x, top + 16),
-            QPointF(arrow_x - 16, top + 52),
-            QPointF(arrow_x - 6, top + 46),
-            QPointF(arrow_x - 6, bottom - 12),
-            QPointF(arrow_x + 6, bottom - 12),
-            QPointF(arrow_x + 6, top + 46),
-            QPointF(arrow_x + 16, top + 52),
-        ])
         painter.drawPolygon(arrow)
-        painter.setPen(QPen(QColor("#ffffff"), 1))
-        text = "Ingen GPS" if self.offset_m is None else f"{abs(self.offset_m):.2f} m"
-        painter.drawText(12, rect.height() - 10, text)
 
 
 class MobileGuideStarter(QThread):
@@ -521,10 +545,42 @@ class MainWindow(QMainWindow):
         self.rtk_status.setWordWrap(True)
         self.fence_combo = QComboBox()
         self.fence_combo.currentIndexChanged.connect(self.update_drive_line_info)
+        btn_prev_fence = QPushButton("<<")
+        btn_prev_fence.setToolTip("Forrige hegnslinje")
+        btn_prev_fence.clicked.connect(self.previous_drive_fence)
+        btn_next_fence = QPushButton(">>")
+        btn_next_fence.setToolTip("Naeste hegnslinje")
+        btn_next_fence.clicked.connect(self.next_drive_fence)
         self.big_distance = QLabel("INGEN GPS")
         self.big_distance.setObjectName("BigNumber")
+        self.big_distance.setAlignment(Qt.AlignCenter)
+        self.big_distance.setStyleSheet("font-size: 32px; font-weight: 800; color: #f4ffe8; background: #142016; border: 1px solid #4f7d3c; border-radius: 6px; padding: 10px;")
+        self.drive_data_labels = {}
+        data_box = QGroupBox("Markdata")
+        data_box.setStyleSheet("QGroupBox { font-weight: 700; }")
+        data_form = QFormLayout(data_box)
+        for key, title in [
+            ("field", "Mark"),
+            ("track", "Spor"),
+            ("fold", "Fold"),
+            ("line_length", "Linje"),
+            ("stakes", "Paele"),
+            ("next_stake", "Naeste pael"),
+            ("gps", "GPS"),
+        ]:
+            value = QLabel("-")
+            value.setWordWrap(True)
+            value.setStyleSheet("font-weight: 700; color: #eff8df;")
+            self.drive_data_labels[key] = value
+            data_form.addRow(QLabel(title), value)
         self.drive_info = QTextEdit()
         self.drive_info.setReadOnly(True)
+        self.drive_info.setMaximumHeight(130)
+        self.drive_info.setPlaceholderText("GPS-log")
+        nav = QHBoxLayout()
+        nav.addWidget(btn_prev_fence)
+        nav.addWidget(self.fence_combo, 1)
+        nav.addWidget(btn_next_fence)
         right.addWidget(QLabel("COM-port"))
         right.addWidget(self.port_combo)
         right.addWidget(QLabel("Baud"))
@@ -546,9 +602,10 @@ class MainWindow(QMainWindow):
         right.addWidget(btn_ntrip_stop)
         right.addWidget(self.rtk_status)
         right.addWidget(QLabel("Valgt hegnslinje"))
-        right.addWidget(self.fence_combo)
+        right.addLayout(nav)
         right.addWidget(QLabel("Afstand til linje"))
         right.addWidget(self.big_distance)
+        right.addWidget(data_box)
         right.addWidget(self.drive_info)
 
         outer.addLayout(right, 2)
@@ -1079,6 +1136,101 @@ finally {
         self.fence_combo.blockSignals(False)
         self.update_drive_line_info()
 
+    def previous_drive_fence(self):
+        if not self.fences or self.fence_combo.count() <= 0:
+            return
+        self.fence_combo.setCurrentIndex((self.fence_combo.currentIndex() - 1) % self.fence_combo.count())
+
+    def next_drive_fence(self):
+        if not self.fences or self.fence_combo.count() <= 0:
+            return
+        self.fence_combo.setCurrentIndex((self.fence_combo.currentIndex() + 1) % self.fence_combo.count())
+
+    def selected_drive_fence(self):
+        if self.fences and 0 <= self.fence_combo.currentIndex() < len(self.fences):
+            return self.fences[self.fence_combo.currentIndex()]
+        return None
+
+    def fence_bearing_deg(self, fence):
+        points = fence_points(fence)
+        if len(points) < 2:
+            return None
+        a, b = points[0], points[-1]
+        dx, dy = b.x - a.x, b.y - a.y
+        if hypot(dx, dy) < 0.01:
+            return None
+        return (atan2(dx, dy) * 180.0 / pi) % 360.0
+
+    def fence_progress_m(self, fence, p):
+        points = fence_points(fence)
+        best = None
+        along_before = 0.0
+        for a, b in zip(points, points[1:]):
+            vx, vy = b.x - a.x, b.y - a.y
+            length_sq = vx * vx + vy * vy
+            seg_len = hypot(vx, vy)
+            if length_sq < 1e-12:
+                continue
+            t = ((p.x - a.x) * vx + (p.y - a.y) * vy) / length_sq
+            t = max(0.0, min(1.0, t))
+            q = Point(a.x + vx * t, a.y + vy * t)
+            candidate = (hypot(p.x - q.x, p.y - q.y), along_before + seg_len * t)
+            if best is None or candidate[0] < best[0]:
+                best = candidate
+            along_before += seg_len
+        return best[1] if best else 0.0
+
+    def update_drive_data_panel(self, fix=None):
+        if not hasattr(self, "drive_data_labels"):
+            return
+        labels = self.drive_data_labels
+        if self.field:
+            total_ha = polygon_area(self.field.boundary) / 10000
+            labels["field"].setText(f"{self.field.name}\n{total_ha:.2f} ha")
+        else:
+            labels["field"].setText("-")
+
+        fence = self.selected_drive_fence()
+        if not fence:
+            for key in ["track", "fold", "line_length", "stakes", "next_stake"]:
+                labels[key].setText("-")
+            labels["gps"].setText("Ingen GPS")
+            return
+
+        idx = self.fence_combo.currentIndex()
+        spacing = self.stake_spacing()
+        stakes = stake_points_on_fence(fence, spacing)
+        labels["track"].setText(f"{idx + 1} / {len(self.fences)}\n{fence.name}")
+        labels["line_length"].setText(f"{fence.length_m:.1f} m")
+        labels["stakes"].setText(f"{len(stakes)} stk\n{self.stake_spacing_label()}")
+
+        if self.fold_areas:
+            left_area = self.fold_areas[idx] / 10000 if idx < len(self.fold_areas) else 0.0
+            right_area = self.fold_areas[idx + 1] / 10000 if idx + 1 < len(self.fold_areas) else 0.0
+            labels["fold"].setText(f"{idx + 1}/{idx + 2}\n{left_area:.2f} / {right_area:.2f} ha")
+        else:
+            labels["fold"].setText("-")
+
+        if self.gps_local:
+            progress = self.fence_progress_m(fence, self.gps_local)
+            length = polyline_length(fence_points(fence))
+            if spacing > 0:
+                next_idx = min(max(1, int(progress // spacing) + 1), max(1, len(stakes) - 1))
+                next_along = min(next_idx * spacing, length)
+                labels["next_stake"].setText(f"Pael {next_idx + 1}/{len(stakes)}\n{max(0.0, next_along - progress):.1f} m")
+            else:
+                labels["next_stake"].setText("-")
+        else:
+            labels["next_stake"].setText("-")
+
+        if fix:
+            quality = {0: "ingen", 1: "GPS", 2: "DGPS", 4: "RTK fix", 5: "RTK float"}.get(fix.fix_quality, str(fix.fix_quality))
+            labels["gps"].setText(f"{quality}\n{fix.sats} sat  HDOP {fix.hdop}")
+        elif self.gps_local:
+            labels["gps"].setText("GPS aktiv")
+        else:
+            labels["gps"].setText("Ingen GPS")
+
     def go_to_drive(self):
         if not self.field:
             QMessageBox.warning(self, "Ingen mark", "Vaelg mark foerst.")
@@ -1105,7 +1257,7 @@ finally {
             lines.append("Vaelg en mark paa Planlaeg-fanen.")
 
         if self.fences and self.fence_combo.currentIndex() >= 0:
-            fence = self.fences[self.fence_combo.currentIndex()]
+            fence = self.selected_drive_fence()
             stakes = stake_points_on_fence(fence, self.stake_spacing())
             lines += [
                 "",
@@ -1123,14 +1275,18 @@ finally {
                 side = "VENSTRE" if xt > 0 else "HOJRE"
                 self.big_distance.setText(f"{abs(xt):.2f} m {side}")
                 if hasattr(self, "drive_guide"):
-                    self.drive_guide.set_offset(xt)
+                    self.drive_guide.set_state(xt, line_bearing_deg=self.fence_bearing_deg(fence))
+            elif hasattr(self, "drive_guide"):
+                self.big_distance.setText("INGEN GPS")
+                self.drive_guide.set_state(None, line_bearing_deg=self.fence_bearing_deg(fence))
         else:
             lines += ["", "Ingen hegnslinje valgt."]
             if self.gps_thread:
                 self.big_distance.setText("INGEN LINJE")
             if hasattr(self, "drive_guide"):
-                self.drive_guide.set_offset(None)
+                self.drive_guide.set_state(None)
 
+        self.update_drive_data_panel()
         self.drive_info.setPlainText("\n".join(lines))
 
     def update_result_text(self):
@@ -1637,7 +1793,9 @@ finally {
             self.gps_thread = None
             self.big_distance.setText("STOPPET")
             if hasattr(self, "drive_guide"):
-                self.drive_guide.set_offset(None)
+                self.drive_guide.set_state(None)
+            self.gps_local = None
+            self.update_drive_data_panel()
 
     def start_ntrip(self):
         if not self.gps_thread:
@@ -1708,15 +1866,21 @@ finally {
             lines.append("Ingen Field.kml, TASKDATA.XML eller AgShare ZIP/georeference fundet.")
         elif self.fences and self.fence_combo.currentIndex() >= 0:
             self.gps_local = self.transform.latlon_to_local(fix.lat, fix.lon)
-            f = self.fences[self.fence_combo.currentIndex()]
+            f = self.selected_drive_fence()
             xt = signed_cross_track_to_fence(self.gps_local, f)
             side = "VENSTRE" if xt > 0 else "HØJRE"
             self.big_distance.setText(f"{abs(xt):.2f} m {side}")
             if hasattr(self, "drive_guide"):
-                self.drive_guide.set_offset(xt)
+                self.drive_guide.set_state(
+                    xt,
+                    heading_deg=fix.track_deg,
+                    line_bearing_deg=self.fence_bearing_deg(f),
+                    speed_kmh=fix.speed_kmh,
+                )
             lines.append(f"Valgt: {f.name}")
             lines.append(f"Laengde: {f.length_m:.1f} m")
             lines.append(f"Paele: {len(stake_points_on_fence(f, self.stake_spacing()))} stk ved {self.stake_spacing_label()}")
             lines.append(f"Afstand til linje: {abs(xt):.2f} m {side}")
             self.drive_map.update_dynamic(self.fences, self.a, self.b, self.gps_local, sync_handles=True)
+        self.update_drive_data_panel(fix)
         self.drive_info.setPlainText("\n".join(lines))

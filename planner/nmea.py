@@ -8,6 +8,7 @@ class GpsFix:
     sats: int = 0
     hdop: float = 0.0
     speed_kmh: float = 0.0
+    track_deg: float | None = None
     raw: str = ""
 
 def nmea_coord_to_decimal(value, hemi):
@@ -43,7 +44,8 @@ def parse_nmea_line(line, last=None):
         try: hdop = float(parts[8] or 0)
         except: hdop = 0.0
         speed = last.speed_kmh if last else 0.0
-        return GpsFix(lat, lon, fixq, sats, hdop, speed, line)
+        track = last.track_deg if last else None
+        return GpsFix(lat, lon, fixq, sats, hdop, speed, track, line)
     if typ == "RMC" and len(parts) > 8:
         lat = nmea_coord_to_decimal(parts[3], parts[4])
         lon = nmea_coord_to_decimal(parts[5], parts[6])
@@ -51,5 +53,7 @@ def parse_nmea_line(line, last=None):
             return last
         try: speed_kmh = float(parts[7] or 0) * 1.852
         except: speed_kmh = 0.0
-        return GpsFix(lat, lon, last.fix_quality if last else 0, last.sats if last else 0, last.hdop if last else 0, speed_kmh, line)
+        try: track_deg = float(parts[8] or 0)
+        except: track_deg = last.track_deg if last else None
+        return GpsFix(lat, lon, last.fix_quality if last else 0, last.sats if last else 0, last.hdop if last else 0, speed_kmh, track_deg, line)
     return last
