@@ -56,4 +56,18 @@ def parse_nmea_line(line, last=None):
         try: track_deg = float(parts[8] or 0)
         except: track_deg = last.track_deg if last else None
         return GpsFix(lat, lon, last.fix_quality if last else 0, last.sats if last else 0, last.hdop if last else 0, speed_kmh, track_deg, line)
+    if typ == "VTG" and len(parts) > 7 and last:
+        try: track_deg = float(parts[1] or last.track_deg or 0)
+        except: track_deg = last.track_deg
+        speed_kmh = last.speed_kmh
+        try:
+            if parts[7]:
+                speed_kmh = float(parts[7])
+        except Exception:
+            pass
+        return GpsFix(last.lat, last.lon, last.fix_quality, last.sats, last.hdop, speed_kmh, track_deg, line)
+    if typ in ("HDT", "THS") and len(parts) > 1 and last:
+        try: heading = float(parts[1] or last.track_deg or 0)
+        except: heading = last.track_deg
+        return GpsFix(last.lat, last.lon, last.fix_quality, last.sats, last.hdop, last.speed_kmh, heading, line)
     return last
