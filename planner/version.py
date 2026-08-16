@@ -1,3 +1,3 @@
-APP_VERSION = "v1.0.21"
+APP_VERSION = "v1.0.22"
 APP_NAME = "AgOpenGPS Fence Planner"
 APP_TITLE = f"{APP_NAME} {APP_VERSION}"

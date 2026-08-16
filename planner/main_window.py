@@ -96,12 +96,33 @@ class GpsReader(QThread):
         self.running = False
 
 
+def ntrip_auth_header(username, password):
+    if not username and not password:
+        return ""
+    auth = base64.b64encode(f"{username}:{password}".encode("ascii", errors="ignore")).decode("ascii")
+    return f"Authorization: Basic {auth}\r\n"
+
+
+def read_ntrip_header(sock, limit=8192):
+    header = b""
+    while b"\r\n\r\n" not in header and len(header) < limit:
+        chunk = sock.recv(1)
+        if not chunk:
+            break
+        header += chunk
+    return header
+
+
+def ntrip_first_line(header):
+    return header.decode("latin1", errors="ignore").splitlines()[0] if header else ""
+
+
 class NtripClient(QThread):
     data = Signal(bytes)
     status = Signal(str)
     error = Signal(str)
 
-    def __init__(self, host, port, mountpoint, username, password):
+    def __init__(self, host, port, mountpoint, username, password, initial_gga=""):
         super().__init__()
         self.host = host.strip()
         self.port = int(port)
@@ -109,7 +130,7 @@ class NtripClient(QThread):
         self.username = username.strip()
         self.password = password
         self.running = True
-        self.last_gga = ""
+        self.last_gga = initial_gga.strip()
 
     def set_gga(self, gga):
         self.last_gga = gga.strip()
@@ -120,25 +141,32 @@ class NtripClient(QThread):
     def run(self):
         sock = None
         try:
-            auth = base64.b64encode(f"{self.username}:{self.password}".encode("ascii", errors="ignore")).decode("ascii")
+            if not self.mountpoint:
+                raise RuntimeError("Mountpoint mangler.")
             request = (
                 f"GET /{self.mountpoint} HTTP/1.0\r\n"
                 f"Host: {self.host}\r\n"
                 "Ntrip-Version: Ntrip/2.0\r\n"
                 "User-Agent: NTRIP FencePlanner/1.0\r\n"
-                f"Authorization: Basic {auth}\r\n"
+                f"{ntrip_auth_header(self.username, self.password)}"
                 "\r\n"
             )
             sock = socket.create_connection((self.host, self.port), timeout=12)
             sock.settimeout(1.0)
             sock.sendall(request.encode("ascii"))
-            header = b""
-            while b"\r\n\r\n" not in header and len(header) < 4096:
-                header += sock.recv(1)
+            header = read_ntrip_header(sock)
             if b"200" not in header.split(b"\r\n", 1)[0] and b"ICY 200" not in header:
-                raise RuntimeError(header.decode("latin1", errors="ignore").strip() or "NTRIP afvist")
+                text = header.decode("latin1", errors="ignore").strip()
+                if "SOURCETABLE" in text.upper() or "STR;" in text:
+                    raise RuntimeError("Caster sendte sourcetable i stedet for RTCM. Tjek at mountpoint er skrevet praecist.")
+                raise RuntimeError(text or "NTRIP afvist")
             self.status.emit("NTRIP: forbundet")
             last_gga_sent = 0.0
+            if self.last_gga:
+                sock.sendall((self.last_gga + "\r\n").encode("ascii", errors="ignore"))
+                last_gga_sent = time.time()
+            else:
+                self.status.emit("NTRIP: forbundet, venter paa GGA fra GPS")
             while self.running:
                 now = time.time()
                 if self.last_gga and now - last_gga_sent > 5:
@@ -160,6 +188,128 @@ class NtripClient(QThread):
                     sock.close()
                 except OSError:
                     pass
+
+
+class NtripSettingsDialog(QDialog):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.parent_window = parent
+        self.setWindowTitle("NTRIP / RTK")
+        self.resize(520, 560)
+
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        self.host = QLineEdit(parent.ntrip_host.text())
+        self.host.setPlaceholderText("caster.example.dk")
+        self.port = QLineEdit(parent.ntrip_port.text() or "2101")
+        self.mount = QComboBox()
+        self.mount.setEditable(True)
+        self.mount.setInsertPolicy(QComboBox.NoInsert)
+        if parent.ntrip_mount.text().strip():
+            self.mount.addItem(parent.ntrip_mount.text().strip())
+        self.user = QLineEdit(parent.ntrip_user.text())
+        self.password = QLineEdit(parent.ntrip_password.text())
+        self.password.setEchoMode(QLineEdit.Password)
+        form.addRow("Caster", self.host)
+        form.addRow("Port", self.port)
+        form.addRow("Mountpoint", self.mount)
+        form.addRow("Bruger", self.user)
+        form.addRow("Kode", self.password)
+        layout.addLayout(form)
+
+        buttons = QHBoxLayout()
+        btn_mounts = QPushButton("Hent mountpoints")
+        btn_mounts.clicked.connect(self.fetch_mountpoints)
+        btn_start = QPushButton("Start NTRIP")
+        btn_start.clicked.connect(self.start_clicked)
+        btn_stop = QPushButton("Stop NTRIP")
+        btn_stop.clicked.connect(parent.stop_ntrip)
+        buttons.addWidget(btn_mounts)
+        buttons.addWidget(btn_start)
+        buttons.addWidget(btn_stop)
+        layout.addLayout(buttons)
+
+        self.status = QLabel(parent.rtk_status.text())
+        self.status.setWordWrap(True)
+        layout.addWidget(self.status)
+        self.log = QTextEdit()
+        self.log.setReadOnly(True)
+        self.log.setPlaceholderText("NTRIP status og fejl vises her.")
+        layout.addWidget(self.log, 1)
+
+        close_btn = QPushButton("Luk")
+        close_btn.clicked.connect(self.accept)
+        layout.addWidget(close_btn)
+
+    def save_to_parent(self):
+        self.parent_window.ntrip_host.setText(self.host.text().strip())
+        self.parent_window.ntrip_port.setText(self.port.text().strip() or "2101")
+        self.parent_window.ntrip_mount.setText(self.mount.currentText().strip())
+        self.parent_window.ntrip_user.setText(self.user.text().strip())
+        self.parent_window.ntrip_password.setText(self.password.text())
+
+    def append_log(self, text):
+        self.log.append(text)
+        self.status.setText(text)
+
+    def fetch_mountpoints(self):
+        host = self.host.text().strip()
+        try:
+            port = int(self.port.text().strip() or "2101")
+        except ValueError:
+            QMessageBox.warning(self, "NTRIP port", "Port skal vaere et tal.")
+            return
+        if not host:
+            QMessageBox.warning(self, "Mangler caster", "Udfyld caster foerst.")
+            return
+        self.append_log(f"Henter sourcetable fra {host}:{port}...")
+        try:
+            request = (
+                "GET / HTTP/1.0\r\n"
+                f"Host: {host}\r\n"
+                "Ntrip-Version: Ntrip/2.0\r\n"
+                "User-Agent: NTRIP FencePlanner/1.0\r\n"
+                f"{ntrip_auth_header(self.user.text().strip(), self.password.text())}"
+                "\r\n"
+            )
+            with socket.create_connection((host, port), timeout=12) as sock:
+                sock.settimeout(4.0)
+                sock.sendall(request.encode("ascii"))
+                chunks = []
+                total = 0
+                while total < 256000:
+                    try:
+                        chunk = sock.recv(8192)
+                    except socket.timeout:
+                        break
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                    total += len(chunk)
+                    if b"ENDSOURCETABLE" in chunk:
+                        break
+            text = b"".join(chunks).decode("latin1", errors="ignore")
+            mounts = []
+            for line in text.splitlines():
+                if line.startswith("STR;"):
+                    parts = line.split(";")
+                    if len(parts) > 1 and parts[1]:
+                        mounts.append(parts[1])
+            self.mount.clear()
+            for mount in sorted(set(mounts), key=str.lower):
+                self.mount.addItem(mount)
+            if mounts:
+                self.append_log(f"Fandt {len(set(mounts))} mountpoints. Vaelg et i listen.")
+            else:
+                first = text.splitlines()[0] if text.splitlines() else "intet svar"
+                self.append_log(f"Ingen mountpoints fundet. Svar: {first}")
+        except Exception as e:
+            self.append_log(f"Kunne ikke hente mountpoints: {e}")
+
+    def start_clicked(self):
+        self.save_to_parent()
+        self.parent_window.start_ntrip(show_warnings=True)
+        self.status.setText(self.parent_window.rtk_status.text())
 
 
 class DriveGuideWidget(QWidget):
@@ -319,6 +469,9 @@ class MainWindow(QMainWindow):
         self.transform = None
         self.gps_thread = None
         self.ntrip_thread = None
+        self.ntrip_dialog = None
+        self.last_gga = ""
+        self.ntrip_bytes_received = 0
         self.gps_local = None
         self.sync_server = None
         self.qr_server_process = None
@@ -537,10 +690,8 @@ class MainWindow(QMainWindow):
         self.ntrip_user = QLineEdit()
         self.ntrip_password = QLineEdit()
         self.ntrip_password.setEchoMode(QLineEdit.Password)
-        btn_ntrip_start = QPushButton("Start NTRIP/RTK")
-        btn_ntrip_start.clicked.connect(self.start_ntrip)
-        btn_ntrip_stop = QPushButton("Stop NTRIP")
-        btn_ntrip_stop.clicked.connect(self.stop_ntrip)
+        btn_ntrip_settings = QPushButton("NTRIP / RTK...")
+        btn_ntrip_settings.clicked.connect(self.open_ntrip_dialog)
         self.rtk_status = QLabel("RTK/NTRIP: stoppet")
         self.rtk_status.setWordWrap(True)
         self.fence_combo = QComboBox()
@@ -588,18 +739,7 @@ class MainWindow(QMainWindow):
         right.addWidget(btn_ports)
         right.addWidget(btn_start)
         right.addWidget(btn_stop)
-        right.addWidget(QLabel("NTRIP caster"))
-        right.addWidget(self.ntrip_host)
-        right.addWidget(QLabel("Port"))
-        right.addWidget(self.ntrip_port)
-        right.addWidget(QLabel("Mountpoint"))
-        right.addWidget(self.ntrip_mount)
-        right.addWidget(QLabel("Bruger"))
-        right.addWidget(self.ntrip_user)
-        right.addWidget(QLabel("Kode"))
-        right.addWidget(self.ntrip_password)
-        right.addWidget(btn_ntrip_start)
-        right.addWidget(btn_ntrip_stop)
+        right.addWidget(btn_ntrip_settings)
         right.addWidget(self.rtk_status)
         right.addWidget(QLabel("Valgt hegnslinje"))
         right.addLayout(nav)
@@ -1797,48 +1937,70 @@ finally {
             self.gps_local = None
             self.update_drive_data_panel()
 
-    def start_ntrip(self):
+    def open_ntrip_dialog(self):
+        self.ntrip_dialog = NtripSettingsDialog(self)
+        self.ntrip_dialog.exec()
+        self.ntrip_dialog = None
+
+    def set_rtk_status(self, text):
+        if hasattr(self, "rtk_status"):
+            self.rtk_status.setText(text)
+        if self.ntrip_dialog:
+            self.ntrip_dialog.status.setText(text)
+            self.ntrip_dialog.log.append(text)
+
+    def start_ntrip(self, show_warnings=False):
         if not self.gps_thread:
-            QMessageBox.warning(self, "Start GPS foerst", "Start GPS/COM-port foerst, saa NTRIP kan sende RTCM til simpleRTK.")
+            message = "Start GPS/COM-port foerst, saa NTRIP kan sende RTCM til simpleRTK."
+            if show_warnings:
+                QMessageBox.warning(self, "Start GPS foerst", message)
+            self.set_rtk_status("NTRIP: start GPS foerst")
             return
         host = self.ntrip_host.text().strip()
         mount = self.ntrip_mount.text().strip()
         user = self.ntrip_user.text().strip()
         password = self.ntrip_password.text()
         if not host or not mount:
-            QMessageBox.warning(self, "Mangler NTRIP", "Udfyld caster og mountpoint.")
+            if show_warnings:
+                QMessageBox.warning(self, "Mangler NTRIP", "Udfyld caster og mountpoint.")
+            self.set_rtk_status("NTRIP: mangler caster/mountpoint")
             return
         try:
             port = int(self.ntrip_port.text().strip() or "2101")
         except ValueError:
-            QMessageBox.warning(self, "NTRIP port", "Port skal vaere et tal.")
+            if show_warnings:
+                QMessageBox.warning(self, "NTRIP port", "Port skal vaere et tal.")
+            self.set_rtk_status("NTRIP: port skal vaere et tal")
             return
         self.stop_ntrip()
-        self.ntrip_thread = NtripClient(host, port, mount, user, password)
+        self.ntrip_bytes_received = 0
+        self.ntrip_thread = NtripClient(host, port, mount, user, password, self.last_gga)
         self.ntrip_thread.data.connect(self.on_ntrip_data)
-        self.ntrip_thread.status.connect(self.rtk_status.setText)
+        self.ntrip_thread.status.connect(self.set_rtk_status)
         self.ntrip_thread.error.connect(self.on_ntrip_error)
         self.ntrip_thread.start()
-        self.rtk_status.setText("NTRIP: forbinder...")
+        self.set_rtk_status("NTRIP: forbinder...")
 
     def stop_ntrip(self):
         if self.ntrip_thread:
             self.ntrip_thread.stop()
             self.ntrip_thread.wait(1500)
             self.ntrip_thread = None
-        if hasattr(self, "rtk_status"):
-            self.rtk_status.setText("RTK/NTRIP: stoppet")
+        self.set_rtk_status("RTK/NTRIP: stoppet")
 
     def on_ntrip_data(self, data):
+        self.ntrip_bytes_received += len(data)
+        if self.ntrip_bytes_received == len(data) or self.ntrip_bytes_received % 50000 < len(data):
+            self.set_rtk_status(f"NTRIP: modtager RTCM ({self.ntrip_bytes_received // 1024} kB)")
         if self.gps_thread:
             self.gps_thread.write_correction(data)
 
     def on_ntrip_error(self, message):
-        if hasattr(self, "rtk_status"):
-            self.rtk_status.setText("NTRIP fejl")
+        self.set_rtk_status("NTRIP fejl")
         QMessageBox.warning(self, "NTRIP fejl", message)
 
     def on_gps_gga(self, gga):
+        self.last_gga = gga.strip()
         if self.ntrip_thread:
             self.ntrip_thread.set_gga(gga)
 
