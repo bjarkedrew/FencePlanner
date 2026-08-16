@@ -676,7 +676,7 @@ class MainWindow(QMainWindow):
         right = QVBoxLayout()
         self.port_combo = QComboBox()
         self.baud_combo = QComboBox()
-        self.baud_combo.addItems(["460800", "115200", "38400", "9600"])
+        self.baud_combo.addItems(["115200", "460800", "38400", "9600"])
         btn_ports = QPushButton("Opdater COM")
         btn_ports.clicked.connect(self.refresh_ports)
         btn_start = QPushButton("Start GPS")
